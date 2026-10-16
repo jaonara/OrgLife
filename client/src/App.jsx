@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import './App.css'
 import Auth from './auth'
 import api from './api'
+import Icon from './Icon'
 
 function readSavedUser() {
   try {
@@ -41,6 +42,14 @@ function App() {
   const [requests, setRequests] = useState([])
   const [myOrganizations, setMyOrganizations] = useState([])
   const [officerRequests, setOfficerRequests] = useState([])
+  const [officerMembers, setOfficerMembers] = useState([])
+  const [officerEvents, setOfficerEvents] = useState([])
+  const [eventAttendance, setEventAttendance] = useState([])
+  const [selectedEventId, setSelectedEventId] = useState('')
+  const [announcements, setAnnouncements] = useState([])
+  const [myEvents, setMyEvents] = useState([])
+  const [announcementTitle, setAnnouncementTitle] = useState('')
+  const [announcementBody, setAnnouncementBody] = useState('')
   const [selectedOrganization, setSelectedOrganization] = useState(null)
   const [members, setMembers] = useState([])
   const [search, setSearch] = useState('')
@@ -68,10 +77,42 @@ function App() {
     setMyOrganizations(response.data.data)
   }
 
+  async function loadAnnouncements() {
+    const response = await api.get('/announcements')
+    setAnnouncements(response.data.data)
+  }
+
+  async function loadMyEvents() {
+    const response = await api.get('/my-events')
+    setMyEvents(response.data.data)
+  }
+
   async function loadOfficerRequests(organizationId = officerOrganizationId) {
     const params = organizationId === 'all' ? {} : { organization_id: organizationId }
     const response = await api.get('/officer/requests', { params })
     setOfficerRequests(response.data.data)
+  }
+
+  async function loadOfficerMembers(organizationId = officerOrganizationId) {
+    if (organizationId === 'all') {
+      setOfficerMembers([])
+      return
+    }
+    const response = await api.get(`/organizations/${organizationId}/members`)
+    setOfficerMembers(response.data.data)
+  }
+
+  async function loadOfficerEvents(organizationId = officerOrganizationId) {
+    if (organizationId === 'all') {
+      setOfficerEvents([])
+      setEventAttendance([])
+      setSelectedEventId('')
+      return
+    }
+    const response = await api.get(`/officer/organizations/${organizationId}/events`)
+    setOfficerEvents(response.data.data)
+    setEventAttendance([])
+    setSelectedEventId('')
   }
 
   useEffect(() => {
@@ -82,13 +123,17 @@ function App() {
       api.get('/organizations'),
       api.get('/membership-requests'),
       api.get('/my-organizations'),
+      api.get('/announcements'),
+      api.get('/my-events'),
     ])
-      .then(([orgResponse, requestResponse, membershipResponse]) => {
+      .then(([orgResponse, requestResponse, membershipResponse, announcementResponse, eventResponse]) => {
         if (cancelled) return
         setOrganizations(orgResponse.data.data)
         setColleges(orgResponse.data.meta.colleges)
         setRequests(requestResponse.data.data)
         setMyOrganizations(membershipResponse.data.data)
+        setAnnouncements(announcementResponse.data.data)
+        setMyEvents(eventResponse.data.data)
         setError('')
       })
       .catch((loadError) => {
@@ -132,6 +177,11 @@ function App() {
       setRequests([])
       setMyOrganizations([])
       setOfficerRequests([])
+      setOfficerMembers([])
+      setOfficerEvents([])
+      setEventAttendance([])
+      setAnnouncements([])
+      setMyEvents([])
     }
   }
 
@@ -196,15 +246,94 @@ function App() {
     await runAction(async () => {
       await loadOfficerRequests('all')
       setOfficerOrganizationId('all')
+      setOfficerMembers([])
+      setOfficerEvents([])
+      setEventAttendance([])
+      setSelectedEventId('')
       setActivePage('Officer Requests')
     })
+  }
+
+  async function changeOfficerOrganization(organizationId) {
+    setOfficerOrganizationId(organizationId)
+    await runAction(() => Promise.all([
+      loadOfficerRequests(organizationId),
+      loadOfficerMembers(organizationId),
+      loadOfficerEvents(organizationId),
+    ]))
+  }
+
+  async function rsvpToEvent(eventId, rsvped) {
+    if (!selectedOrganization) return
+    await runAction(async () => {
+      const path = `/organizations/${selectedOrganization.id}/events/${eventId}/rsvp`
+      if (rsvped) {
+        await api.delete(path)
+      } else {
+        await api.post(path)
+      }
+      const [organizationResponse] = await Promise.all([
+        api.get(`/organizations/${selectedOrganization.id}`),
+        loadMyEvents(),
+      ])
+      setSelectedOrganization(organizationResponse.data.data)
+    }, rsvped ? 'Your RSVP has been cancelled.' : 'You are RSVP’d for this event.')
+  }
+
+  async function openEventAttendance(eventId) {
+    await runAction(async () => {
+      const response = await api.get(`/officer/events/${eventId}/attendance`)
+      setEventAttendance(response.data.data)
+      setSelectedEventId(String(eventId))
+    })
+  }
+
+  async function markAttendance(eventId, userId) {
+    await runAction(async () => {
+      await api.post(`/officer/events/${eventId}/attendance/${userId}`)
+      const [attendanceResponse] = await Promise.all([
+        api.get(`/officer/events/${eventId}/attendance`),
+        loadOfficerEvents(),
+      ])
+      setEventAttendance(attendanceResponse.data.data)
+      setSelectedEventId(String(eventId))
+    }, 'Attendance marked.')
   }
 
   async function decideRequest(requestId, status) {
     await runAction(async () => {
       await api.patch(`/officer/requests/${requestId}`, { status })
       await Promise.all([loadOfficerRequests(), loadRequests(), loadMyOrganizations()])
+      await loadOfficerMembers()
     }, `Request ${status}.`)
+  }
+
+  async function removeOrganizationMember(memberId) {
+    await runAction(async () => {
+      await api.delete(`/officer/organizations/${officerOrganizationId}/members/${memberId}`)
+      await loadOfficerMembers()
+    }, 'Member removed from the organization.')
+  }
+
+  async function promoteOrganizationMember(memberId) {
+    await runAction(async () => {
+      await api.patch(`/officer/organizations/${officerOrganizationId}/members/${memberId}`)
+      await Promise.all([loadOfficerMembers(), loadMyOrganizations()])
+    }, 'Member promoted to officer.')
+  }
+
+  async function postAnnouncement(title, body) {
+    if (!selectedOrganization) return
+    await runAction(async () => {
+      await api.post(`/organizations/${selectedOrganization.id}/announcements`, { title, body })
+      const [organizationResponse] = await Promise.all([
+        api.get(`/organizations/${selectedOrganization.id}`),
+        loadAnnouncements(),
+      ])
+      setSelectedOrganization(organizationResponse.data.data)
+      setAnnouncementTitle('')
+      setAnnouncementBody('')
+    }, 'Announcement posted.')
   }
 
   const filteredOrganizations = useMemo(() => {
@@ -244,19 +373,19 @@ function App() {
     <div className="app">
       <aside className="sidebar">
         <div className="brand">
-          <div className="brand-icon">O</div>
+          <div className="brand-icon" aria-hidden="true"><span /></div>
           <div><h2>OrgLife</h2><p>Campus community</p></div>
         </div>
         <p className="nav-label">MENU</p>
         {['Dashboard', 'Discover', 'My Organizations', 'My Requests'].map((page) => (
           <button key={page} className={`nav-link ${activePage === page ? 'active' : ''}`} onClick={() => navTo(page)}>
-            {page === 'Dashboard' ? '▦' : page === 'Discover' ? '⌕' : page === 'My Organizations' ? '♧' : '☷'}
+            <Icon name={page === 'Dashboard' ? 'dashboard' : page === 'Discover' ? 'search' : page === 'My Organizations' ? 'organizations' : 'requests'} />
             <span>{page}</span>
           </button>
         ))}
         {officerOrganizations.length > 0 && (
           <button className={`nav-link ${activePage === 'Officer Requests' ? 'active' : ''}`} onClick={openOfficerScreen}>
-            ✓<span>Officer Requests</span>
+            <Icon name="officer" /><span>Officer Tools</span>
           </button>
         )}
         <div className="sidebar-bottom">
@@ -284,13 +413,31 @@ function App() {
         {activePage === 'Dashboard' && (
           <>
             <section className="welcome">
-              <div><span className="eyebrow">YOUR CAMPUS, YOUR COMMUNITY</span><h2>Find your people.</h2><p>Welcome, {user.name}! Discover organizations, explore your interests, and find a community where you belong.</p><button className="primary-button" onClick={() => navTo('Discover')}>Explore organizations →</button></div>
-              <div className="welcome-art" aria-hidden="true"><div className="art-circle"><span>◎</span><span>♧</span><span>✳</span><span>✦</span></div></div>
+              <div><span className="eyebrow">YOUR CAMPUS, YOUR COMMUNITY</span><h2>Find your people.</h2><p>Welcome, {user.name}! Discover organizations, explore your interests, and find a community where you belong.</p><button className="primary-button" onClick={() => navTo('Discover')}>Explore organizations <Icon name="arrowRight" /></button></div>
+              <div className="welcome-art" aria-hidden="true"><div className="art-circle"><span /><span /><span /></div></div>
             </section>
             <section className="stats-grid">
-              <Stat icon="♧" label="Student organizations" value={organizations.length} tone="purple" />
-              <Stat icon="☷" label="My requests" value={requests.length} tone="green" />
-              <Stat icon="♡" label="My memberships" value={myOrganizations.length} tone="orange" />
+              <Stat icon="organizations" label="Student organizations" value={organizations.length} tone="purple" />
+              <Stat icon="requests" label="My requests" value={requests.length} tone="green" />
+              <Stat icon="members" label="My memberships" value={myOrganizations.length} tone="orange" />
+            </section>
+            <section className="content-panel dashboard-section">
+              <div className="section-heading"><div><span className="eyebrow">YOUR COMMUNITIES</span><h2>Organizations you belong to</h2><p>Quick access to your organizations and member roles.</p></div><span className="result-count">{myOrganizations.length} joined</span></div>
+              {myOrganizations.length ? <div className="dashboard-org-list">{myOrganizations.map((membership) => (
+                <article className="dashboard-org-row" key={membership.id}>
+                  <div><h3>{membership.name}</h3><p>{membership.category} · {membership.college}</p></div>
+                  <span className="role-pill">{membership.role}</span>
+                  <button className="text-button" onClick={() => openOrganization(membership.id)}>Open <Icon name="arrowRight" /></button>
+                </article>
+              ))}</div> : <EmptyState title="No organizations yet" description="Join an organization to see it here." action="Discover organizations" onAction={() => navTo('Discover')} />}
+            </section>
+            <section className="content-panel dashboard-section">
+              <div className="section-heading"><div><span className="eyebrow">COMMUNITY UPDATES</span><h2>Announcements</h2><p>Latest posts from every organization you belong to.</p></div></div>
+              <AnnouncementList announcements={announcements} onOpenOrganization={openOrganization} />
+            </section>
+            <section className="content-panel dashboard-section">
+              <div className="section-heading"><div><span className="eyebrow">YOUR CALENDAR</span><h2>Organization events</h2><p>Upcoming and past events from every organization you’ve joined.</p></div></div>
+              <EventList events={myEvents} onOpenOrganization={openOrganization} />
             </section>
           </>
         )}
@@ -308,11 +455,11 @@ function App() {
               <div className="organization-grid">
                 {filteredOrganizations.map((organization) => (
                   <article className="org-card" key={organization.id}>
-                    <div className="org-card-top"><div className="org-avatar" style={{ backgroundColor: organization.color }}>{organization.name.split(/\s+/).map((part) => part[0]).join('').slice(0, 2)}</div><span className={`membership ${organization.open ? 'open' : 'closed'}`}>{organization.open ? '● Open' : '● Closed'}</span></div>
+                    <div className="org-card-top"><div className="org-avatar" style={{ backgroundColor: organization.color }}>{organization.name.split(/\s+/).map((part) => part[0]).join('').slice(0, 2)}</div><span className={`membership ${organization.open ? 'open' : 'closed'}`}>{organization.open ? 'Open' : 'Closed'}</span></div>
                     <span className="category">{organization.category}</span><h3>{organization.name}</h3><p className="org-cause">{organization.cause}</p>
                     <div className="org-meta"><span>{organization.college}</span><span>{organization.members} members</span></div>
                     {organization.request_status && <p className={`status-label status-${organization.request_status}`}>Request {organization.request_status}</p>}
-                    <button className="outline-button" onClick={() => openOrganization(organization.id)}>View organization →</button>
+                    <button className="outline-button" onClick={() => openOrganization(organization.id)}>View organization <Icon name="arrowRight" /></button>
                   </article>
                 ))}
               </div>
@@ -329,6 +476,12 @@ function App() {
             onJoin={() => requestToJoin(selectedOrganization.id)}
             onWithdraw={() => withdrawRequest(selectedOrganization.id)}
             onViewMembers={viewMembers}
+            onPostAnnouncement={postAnnouncement}
+            announcementTitle={announcementTitle}
+            announcementBody={announcementBody}
+            onAnnouncementTitleChange={setAnnouncementTitle}
+            onAnnouncementBodyChange={setAnnouncementBody}
+            onRsvp={rsvpToEvent}
           />
         )}
 
@@ -349,14 +502,14 @@ function App() {
           <section className="content-panel">
             <div className="section-heading"><div><span className="eyebrow">YOUR COMMUNITIES</span><h2>My organizations</h2><p>Organizations you belong to and your roles.</p></div></div>
             {myOrganizations.length ? <div className="organization-grid">{myOrganizations.map((membership) => (
-              <article className="org-card" key={membership.id}><span className="category">{membership.category}</span><h3>{membership.name}</h3><p className="org-cause">{membership.college}</p><span className="role-pill">{membership.role}</span><button className="outline-button" onClick={() => openOrganization(membership.id)}>Open organization →</button></article>
+              <article className="org-card" key={membership.id}><span className="category">{membership.category}</span><h3>{membership.name}</h3><p className="org-cause">{membership.college}</p><span className="role-pill">{membership.role}</span><button className="outline-button" onClick={() => openOrganization(membership.id)}>Open organization <Icon name="arrowRight" /></button></article>
             ))}</div> : <EmptyState title="You haven't joined an organization yet" description="Send a request to join an open organization to get started." action="Discover organizations" onAction={() => navTo('Discover')} />}
           </section>
         )}
 
         {activePage === 'Officer Requests' && (
           <section className="content-panel">
-            <div className="section-heading"><div><span className="eyebrow">OFFICER TOOLS</span><h2>Join requests</h2><p>Review pending requests for organizations you lead.</p></div><select aria-label="Filter officer requests by organization" value={officerOrganizationId} onChange={async (event) => { setOfficerOrganizationId(event.target.value); await runAction(() => loadOfficerRequests(event.target.value)) }}><option value="all">All my organizations</option>{officerOrganizations.map((organization) => <option key={organization.id} value={organization.id}>{organization.name}</option>)}</select></div>
+            <div className="section-heading"><div><span className="eyebrow">OFFICER TOOLS</span><h2>Join requests and members</h2><p>Review requests and manage membership for organizations you lead.</p></div><select aria-label="Filter officer tools by organization" value={officerOrganizationId} onChange={(event) => changeOfficerOrganization(event.target.value)}><option value="all">All my organizations</option>{officerOrganizations.map((organization) => <option key={organization.id} value={organization.id}>{organization.name}</option>)}</select></div>
             {officerRequests.length ? <div className="request-list">{officerRequests.map((request) => (
               <article className="request-row" key={request.id}>
                 <div><h3>{request.user.name}</h3><p>{request.user.email} · {request.organization.name}</p></div>
@@ -364,6 +517,40 @@ function App() {
                 {request.status === 'pending' && <div className="decision-buttons"><button className="approve-button" disabled={loading} onClick={() => decideRequest(request.id, 'approved')}>Approve</button><button className="decline-button" disabled={loading} onClick={() => decideRequest(request.id, 'declined')}>Decline</button></div>}
               </article>
             ))}</div> : <EmptyState title="No requests to review" description="Pending join requests for your organizations will appear here." />}
+            <section className="officer-members">
+              <h3>Manage members</h3>
+              {officerOrganizationId === 'all'
+                ? <p className="muted-copy">Choose one organization above to manage its members.</p>
+                : officerMembers.length ? <div className="member-list">{officerMembers.map((member) => (
+                  <div className="member-row" key={member.id}>
+                    <div><strong>{member.name}</strong><span>{member.email}</span></div>
+                    <span className="role-pill">{member.role}</span>
+                    <div className="decision-buttons">
+                      {member.role === 'Member' && <button className="approve-button" disabled={loading} onClick={() => promoteOrganizationMember(member.id)}>Make officer</button>}
+                      {member.role !== 'President' && member.user_id !== user.id && <button className="decline-button" disabled={loading} onClick={() => removeOrganizationMember(member.id)}>Remove</button>}
+                    </div>
+                  </div>
+                ))}</div> : <EmptyState title="No members found" description="Members of the selected organization will appear here." />}
+            </section>
+            <section className="officer-members">
+              <h3>Event attendance</h3>
+              {officerOrganizationId === 'all'
+                ? <p className="muted-copy">Choose one organization above to manage event attendance.</p>
+                : officerEvents.length ? <div className="request-list">{officerEvents.map((event) => (
+                  <article className="request-row event-management-row" key={event.id}>
+                    <div><h3>{event.title}</h3><p>{new Date(event.starts_at).toLocaleString()} · {event.attendance_count} attended · {event.rsvp_count} RSVPs</p></div>
+                    <button className="outline-button attendance-action" onClick={() => openEventAttendance(event.id)}>{String(event.id) === selectedEventId ? 'Refresh roster' : 'Mark attendance'}</button>
+                  </article>
+                ))}</div> : <EmptyState title="No events to manage" description="This organization has no scheduled events." />}
+              {selectedEventId && <div className="member-list attendance-roster">{eventAttendance.map((attendee) => (
+                <div className="member-row" key={attendee.user_id}>
+                  <div><strong>{attendee.name}</strong><span>{attendee.email} · {attendee.role}{attendee.rsvped ? ' · RSVP’d' : ''}</span></div>
+                  {attendee.attended
+                    ? <span className="status-label status-approved">Attended</span>
+                    : <button className="approve-button" disabled={loading} onClick={() => markAttendance(selectedEventId, attendee.user_id)}>Mark attended</button>}
+                </div>
+              ))}</div>}
+            </section>
           </section>
         )}
 
@@ -374,30 +561,62 @@ function App() {
 }
 
 function Stat({ icon, label, value, tone }) {
-  return <div className="stat-card"><div className={`stat-icon ${tone}`}>{icon}</div><p>{label}</p><h3>{String(value).padStart(2, '0')}</h3></div>
+  return <div className="stat-card"><div className={`stat-icon ${tone}`}><Icon name={icon} /></div><p>{label}</p><h3>{String(value).padStart(2, '0')}</h3></div>
 }
 
 function EmptyState({ title, description, action, onAction }) {
   return <div className="empty-state"><h3>{title}</h3><p>{description}</p>{action && <button className="outline-button" onClick={onAction}>{action}</button>}</div>
 }
 
-function OrganizationDetails({ organization, members, loading, onBack, onJoin, onWithdraw, onViewMembers }) {
+function OrganizationDetails({
+  organization,
+  members,
+  loading,
+  onBack,
+  onJoin,
+  onWithdraw,
+  onViewMembers,
+  onPostAnnouncement,
+  announcementTitle,
+  announcementBody,
+  onAnnouncementTitleChange,
+  onAnnouncementBodyChange,
+  onRsvp,
+}) {
   const isMember = Boolean(organization.membership_role)
+  const isOfficer = ['President', 'Officer'].includes(organization.membership_role)
   const canRequest = organization.open && !isMember && organization.request_status !== 'pending'
 
   return (
     <section className="content-panel organization-detail">
-      <button className="text-button" onClick={onBack}>← Back to organizations</button>
+      <button className="text-button back-button" onClick={onBack}><Icon name="arrowLeft" />Back to organizations</button>
       <div className="detail-heading">
         <div className="org-avatar large-avatar" style={{ backgroundColor: organization.color }}>{organization.name.split(/\s+/).map((part) => part[0]).join('').slice(0, 2)}</div>
         <div><span className="category">{organization.category} · {organization.college}</span><h2>{organization.name}</h2><p>{organization.cause}</p></div>
-        <span className={`membership ${organization.open ? 'open' : 'closed'}`}>{organization.open ? '● Open membership' : '● Membership closed'}</span>
+        <span className={`membership ${organization.open ? 'open' : 'closed'}`}>{organization.open ? 'Open membership' : 'Membership closed'}</span>
       </div>
       <div className="detail-columns">
         <section className="detail-block"><h3>Our mission</h3><p>{organization.mission}</p></section>
         <section className="detail-block"><h3>Officers</h3>{organization.officers.length ? <ul className="plain-list">{organization.officers.map((officer) => <li key={`${officer.name}-${officer.role}`}><strong>{officer.name}</strong><span>{officer.role}</span></li>)}</ul> : <p>Officer information hasn't been added yet.</p>}</section>
       </div>
-      <section className="detail-block"><h3>Events</h3>{organization.events.length ? <div className="event-list">{organization.events.map((event) => <article className="event-card" key={event.id}><strong>{event.title}</strong><time>{new Date(event.starts_at).toLocaleString()}</time>{event.location && <span>{event.location}</span>}{event.description && <p>{event.description}</p>}</article>)}</div> : <p>No events are scheduled yet.</p>}</section>
+      <section className="detail-block">
+        <h3>Organization calendar</h3>
+        <EventList
+          events={organization.events}
+          isMember={isMember}
+          loading={loading}
+          onRsvp={onRsvp}
+        />
+      </section>
+      {isMember && <section className="detail-block">
+        <h3>Organization announcements</h3>
+        {organization.announcements?.length ? <AnnouncementList announcements={organization.announcements} /> : <p>No announcements have been posted yet.</p>}
+        {isOfficer && <form className="announcement-form" onSubmit={(event) => { event.preventDefault(); onPostAnnouncement(announcementTitle, announcementBody) }}>
+          <label>Title<input required maxLength="160" value={announcementTitle} onChange={(event) => onAnnouncementTitleChange(event.target.value)} /></label>
+          <label>Announcement<textarea required maxLength="5000" rows="4" value={announcementBody} onChange={(event) => onAnnouncementBodyChange(event.target.value)} /></label>
+          <button className="primary-button" disabled={loading || !announcementTitle.trim() || !announcementBody.trim()}>Post announcement</button>
+        </form>}
+      </section>}
       <div className="detail-actions">
         {canRequest && <button className="primary-button" disabled={loading} onClick={onJoin}>{organization.request_status === 'declined' || organization.request_status === 'withdrawn' ? 'Request to join again' : 'Request to join'}</button>}
         {organization.request_status === 'pending' && <><span className="status-label status-pending">Request pending</span><button className="text-button danger-text" disabled={loading} onClick={onWithdraw}>Withdraw request</button></>}
@@ -408,6 +627,71 @@ function OrganizationDetails({ organization, members, loading, onBack, onJoin, o
       {members.length > 0 && <section className="detail-block"><h3>Members and roles ({members.length})</h3><div className="member-list">{members.map((member) => <div className="member-row" key={member.email}><div><strong>{member.name}</strong><span>{member.email}</span></div><span className="role-pill">{member.role}</span></div>)}</div></section>}
     </section>
   )
+}
+
+function EventList({ events, isMember = false, loading = false, onRsvp, onOpenOrganization }) {
+  if (!events.length) {
+    return <p>No events are scheduled yet.</p>
+  }
+
+  const sections = [
+    { title: 'Upcoming events', events: events.filter((event) => !event.is_past) },
+    { title: 'Past events', events: events.filter((event) => event.is_past) },
+  ].filter((section) => section.events.length)
+
+  return <div className="event-calendar">
+    {sections.map((section) => (
+      <section className="calendar-section" key={section.title}>
+        <h4>{section.title}</h4>
+        <div className="event-list">{section.events.map((event) => (
+          <article className="event-card" key={event.id}>
+            <strong>{event.title}</strong>
+            <time>{new Date(event.starts_at).toLocaleString()}</time>
+            {event.organization && <span>{event.organization.name}</span>}
+            {event.location && <span>{event.location}</span>}
+            {event.description && <p>{event.description}</p>}
+            <div className="event-counts">
+              <span>{event.rsvp_count} going</span>
+              <span>{event.attendance_count} attended</span>
+            </div>
+            {isMember && !event.is_past && onRsvp && (
+              <button
+                className={event.rsvped ? 'decline-button' : 'approve-button'}
+                disabled={loading}
+                onClick={() => onRsvp(event.id, event.rsvped)}
+              >
+                {event.rsvped ? 'Cancel RSVP' : 'RSVP'}
+              </button>
+            )}
+            {onOpenOrganization && event.organization && (
+              <button className="text-button" onClick={() => onOpenOrganization(event.organization.id)}>
+                Open organization <Icon name="arrowRight" />
+              </button>
+            )}
+          </article>
+        ))}</div>
+      </section>
+    ))}
+  </div>
+}
+
+function AnnouncementList({ announcements, onOpenOrganization }) {
+  if (!announcements.length) {
+    return <EmptyState title="No announcements yet" description="Posts from your organizations will appear here." />
+  }
+
+  return <div className="announcement-list">{announcements.map((announcement) => (
+    <article className="announcement-card" key={announcement.id}>
+      <div className="announcement-meta">
+        <strong>{announcement.organization.name}</strong>
+        <time>{new Date(announcement.created_at).toLocaleString()}</time>
+      </div>
+      <h3>{announcement.title}</h3>
+      <p>{announcement.body}</p>
+      <span>Posted by {announcement.author.name}</span>
+      {onOpenOrganization && <button className="text-button" onClick={() => onOpenOrganization(announcement.organization.id)}>Open organization <Icon name="arrowRight" /></button>}
+    </article>
+  ))}</div>
 }
 
 export default App

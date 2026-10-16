@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import api from './api'
 import './auth.css'
+import Icon from './Icon'
 
 function Auth({ onLogin }) {
   const [mode, setMode] = useState('login')
@@ -52,7 +53,7 @@ function Auth({ onLogin }) {
     <main className="auth-page">
       <section className="auth-intro">
         <div className="auth-brand">
-          <div className="auth-logo">O</div>
+          <div className="auth-logo" aria-hidden="true"><span /></div>
           <span>OrgLife</span>
         </div>
 
@@ -64,9 +65,9 @@ function Auth({ onLogin }) {
             and become part of your campus community.
           </p>
           <div className="auth-points">
-            <p>✓ Discover student organizations</p>
-            <p>✓ Connect with like-minded students</p>
-            <p>✓ Join communities that inspire you</p>
+            <p><Icon name="check" />Discover student organizations</p>
+            <p><Icon name="check" />Connect with like-minded students</p>
+            <p><Icon name="check" />Join communities that inspire you</p>
           </div>
         </div>
 

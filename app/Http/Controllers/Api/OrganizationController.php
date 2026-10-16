@@ -5,7 +5,11 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\MembershipRequest;
 use App\Models\Organization;
+use App\Models\OrganizationAnnouncement;
+use App\Models\OrganizationEvent;
+use App\Models\OrganizationEventAttendance;
 use App\Models\OrganizationMember;
+use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -54,16 +58,27 @@ class OrganizationController extends Controller
 
     public function show(Request $request, Organization $organization)
     {
+        $membership = $request->user()
+            ? $organization->members()->where('user_id', $request->user()->id)->first()
+            : null;
+
         $organization->load([
-            'events',
+            'events' => fn ($events) => $events
+                ->withCount([
+                    'attendances as rsvp_count' => fn ($query) => $query->whereNotNull('rsvp_at'),
+                    'attendances as attendance_count' => fn ($query) => $query->whereNotNull('attended_at'),
+                ])
+                ->with(['attendances' => fn ($query) => $membership
+                    ? $query->where('user_id', $membership->user_id)
+                    : $query->whereRaw('1 = 0')]),
+            'announcements' => fn ($announcements) => $membership
+                ? $announcements->with(['author:id,name', 'organization:id,name'])
+                : $announcements->whereRaw('1 = 0'),
             'members' => fn ($members) => $members
                 ->whereIn('role', ['President', 'Officer'])
                 ->with('user:id,name'),
         ])->loadCount('members');
 
-        $membership = $request->user()
-            ? $organization->members()->where('user_id', $request->user()->id)->first()
-            : null;
         $membershipRequest = $request->user()
             ? $organization->requests()->where('user_id', $request->user()->id)->first()
             : null;
@@ -76,7 +91,10 @@ class OrganizationController extends Controller
                     'name' => $member->user->name,
                     'role' => $member->role,
                 ])->values(),
-                'events' => $organization->events,
+                'events' => $organization->events->map(fn (OrganizationEvent $event) => $this->eventData($event))->values(),
+                'announcements' => $membership
+                    ? $organization->announcements->map(fn (OrganizationAnnouncement $announcement) => $this->announcementData($announcement))->values()
+                    : [],
                 'membership_role' => $membership?->role,
                 'request_status' => $membershipRequest?->status,
             ],
@@ -228,12 +246,263 @@ class OrganizationController extends Controller
                 ->orderBy('joined_at')
                 ->get()
                 ->map(fn (OrganizationMember $membership) => [
+                    'id' => $membership->id,
+                    'user_id' => $membership->user_id,
                     'name' => $membership->user->name,
                     'email' => $membership->user->email,
                     'role' => $membership->role,
                     'joined_at' => $membership->joined_at,
                 ]),
         ]);
+    }
+
+    public function removeMember(Request $request, Organization $organization, OrganizationMember $member)
+    {
+        $this->authorizeOfficer($request, $organization);
+        abort_unless($member->organization_id === $organization->id, 404);
+        abort_if($member->user_id === $request->user()->id, 409, 'You cannot remove yourself from the organization.');
+        abort_if($member->role === 'President', 409, 'The organization president cannot be removed.');
+
+        $member->delete();
+
+        return response()->json(['message' => 'Member removed from the organization.']);
+    }
+
+    public function promoteMember(Request $request, Organization $organization, OrganizationMember $member)
+    {
+        $this->authorizeOfficer($request, $organization);
+        abort_unless($member->organization_id === $organization->id, 404);
+        abort_if($member->role !== 'Member', 409, 'Only regular members can be promoted to officer.');
+
+        $member->load('user:id,name,email');
+        $member->update(['role' => 'Officer']);
+
+        return response()->json([
+            'message' => 'Member promoted to officer.',
+            'data' => [
+                'id' => $member->id,
+                'user_id' => $member->user_id,
+                'name' => $member->user->name,
+                'email' => $member->user->email,
+                'role' => $member->role,
+                'joined_at' => $member->joined_at,
+            ],
+        ]);
+    }
+
+    public function announcements(Request $request)
+    {
+        $organizationIds = $request->user()->organizationMemberships()->select('organization_id');
+
+        return response()->json([
+            'data' => OrganizationAnnouncement::query()
+                ->whereIn('organization_id', $organizationIds)
+                ->with(['organization:id,name', 'author:id,name'])
+                ->latest()
+                ->get()
+                ->map(fn (OrganizationAnnouncement $announcement) => $this->announcementData($announcement)),
+        ]);
+    }
+
+    public function postAnnouncement(Request $request, Organization $organization)
+    {
+        $this->authorizeOfficer($request, $organization);
+
+        $validated = $request->validate([
+            'title' => ['required', 'string', 'max:160'],
+            'body' => ['required', 'string', 'max:5000'],
+        ]);
+
+        $announcement = $organization->announcements()->create([
+            ...$validated,
+            'user_id' => $request->user()->id,
+        ])->load(['organization:id,name', 'author:id,name']);
+
+        return response()->json([
+            'message' => 'Announcement posted.',
+            'data' => $this->announcementData($announcement),
+        ], 201);
+    }
+
+    public function myEvents(Request $request)
+    {
+        $organizationIds = $request->user()->organizationMemberships()->select('organization_id');
+
+        return response()->json([
+            'data' => OrganizationEvent::query()
+                ->whereIn('organization_id', $organizationIds)
+                ->with('organization:id,name')
+                ->withCount([
+                    'attendances as rsvp_count' => fn ($query) => $query->whereNotNull('rsvp_at'),
+                    'attendances as attendance_count' => fn ($query) => $query->whereNotNull('attended_at'),
+                ])
+                ->with(['attendances' => fn ($query) => $query->where('user_id', $request->user()->id)])
+                ->orderBy('starts_at')
+                ->get()
+                ->map(fn (OrganizationEvent $event) => $this->eventData($event)),
+        ]);
+    }
+
+    public function rsvpToEvent(Request $request, Organization $organization, OrganizationEvent $event)
+    {
+        $this->assertEventBelongsToOrganization($event, $organization);
+        abort_unless(
+            $organization->members()->where('user_id', $request->user()->id)->exists(),
+            403,
+            'Only organization members can RSVP to its events.',
+        );
+        abort_if($event->starts_at->isPast(), 409, 'You cannot RSVP to an event that has already started.');
+
+        $attendance = OrganizationEventAttendance::firstOrNew([
+            'organization_event_id' => $event->id,
+            'user_id' => $request->user()->id,
+        ]);
+        $attendance->rsvp_at ??= now();
+        $attendance->save();
+
+        return response()->json([
+            'message' => 'You are RSVP’d for this event.',
+            'data' => ['event_id' => $event->id, 'rsvped' => true],
+        ]);
+    }
+
+    public function cancelEventRsvp(Request $request, Organization $organization, OrganizationEvent $event)
+    {
+        $this->assertEventBelongsToOrganization($event, $organization);
+        abort_unless(
+            $organization->members()->where('user_id', $request->user()->id)->exists(),
+            403,
+            'Only organization members can manage their RSVP.',
+        );
+
+        OrganizationEventAttendance::query()
+            ->where('organization_event_id', $event->id)
+            ->where('user_id', $request->user()->id)
+            ->whereNotNull('rsvp_at')
+            ->update(['rsvp_at' => null, 'updated_at' => now()]);
+
+        return response()->json([
+            'message' => 'Your RSVP has been cancelled.',
+            'data' => ['event_id' => $event->id, 'rsvped' => false],
+        ]);
+    }
+
+    public function officerEvents(Request $request, Organization $organization)
+    {
+        $this->authorizeOfficer($request, $organization);
+
+        return response()->json([
+            'data' => $organization->events()
+                ->withCount([
+                    'attendances as rsvp_count' => fn ($query) => $query->whereNotNull('rsvp_at'),
+                    'attendances as attendance_count' => fn ($query) => $query->whereNotNull('attended_at'),
+                ])
+                ->orderBy('starts_at')
+                ->get()
+                ->map(fn (OrganizationEvent $event) => $this->eventData($event)),
+        ]);
+    }
+
+    public function eventAttendance(Request $request, OrganizationEvent $event)
+    {
+        $organization = $event->organization;
+        $this->authorizeOfficer($request, $organization);
+
+        $members = $organization->members()->with('user:id,name,email')->get();
+        $attendance = $event->attendances()
+            ->whereIn('user_id', $members->pluck('user_id'))
+            ->get()
+            ->keyBy('user_id');
+
+        return response()->json([
+            'data' => $members->map(fn (OrganizationMember $membership) => [
+                'user_id' => $membership->user_id,
+                'name' => $membership->user->name,
+                'email' => $membership->user->email,
+                'role' => $membership->role,
+                'rsvped' => $attendance->get($membership->user_id)?->rsvp_at !== null,
+                'attended' => $attendance->get($membership->user_id)?->attended_at !== null,
+            ])->values(),
+        ]);
+    }
+
+    public function markEventAttendance(Request $request, OrganizationEvent $event, User $user)
+    {
+        $organization = $event->organization;
+        $this->authorizeOfficer($request, $organization);
+        abort_unless(
+            $organization->members()->where('user_id', $user->id)->exists(),
+            404,
+            'This user is not a member of the organization.',
+        );
+
+        $attendance = OrganizationEventAttendance::firstOrNew([
+            'organization_event_id' => $event->id,
+            'user_id' => $user->id,
+        ]);
+        $attendance->attended_at ??= now();
+        $attendance->save();
+
+        return response()->json([
+            'message' => 'Attendance marked.',
+            'data' => ['event_id' => $event->id, 'user_id' => $user->id, 'attended' => true],
+        ]);
+    }
+
+    private function assertEventBelongsToOrganization(OrganizationEvent $event, Organization $organization): void
+    {
+        abort_unless($event->organization_id === $organization->id, 404);
+    }
+
+    private function eventData(OrganizationEvent $event): array
+    {
+        return [
+            'id' => $event->id,
+            'organization_id' => $event->organization_id,
+            'title' => $event->title,
+            'description' => $event->description,
+            'location' => $event->location,
+            'starts_at' => $event->starts_at,
+            'is_past' => $event->starts_at->isPast(),
+            'rsvp_count' => (int) ($event->rsvp_count ?? 0),
+            'attendance_count' => (int) ($event->attendance_count ?? 0),
+            'rsvped' => $event->relationLoaded('attendances')
+                && $event->attendances->first()?->rsvp_at !== null,
+            'organization' => $event->relationLoaded('organization') && $event->organization ? [
+                'id' => $event->organization->id,
+                'name' => $event->organization->name,
+            ] : null,
+        ];
+    }
+
+    private function authorizeOfficer(Request $request, Organization $organization): void
+    {
+        abort_unless(
+            $request->user()->organizationMemberships()
+                ->where('organization_id', $organization->id)
+                ->whereIn('role', ['President', 'Officer'])
+                ->exists(),
+            403,
+            'Only organization officers can manage members or post announcements.',
+        );
+    }
+
+    private function announcementData(OrganizationAnnouncement $announcement): array
+    {
+        return [
+            'id' => $announcement->id,
+            'title' => $announcement->title,
+            'body' => $announcement->body,
+            'created_at' => $announcement->created_at,
+            'organization' => [
+                'id' => $announcement->organization->id,
+                'name' => $announcement->organization->name,
+            ],
+            'author' => [
+                'id' => $announcement->author->id,
+                'name' => $announcement->author->name,
+            ],
+        ];
     }
 
     private function summary(Organization $organization, ?int $userId): array

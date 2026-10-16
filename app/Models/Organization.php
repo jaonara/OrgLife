@@ -29,6 +29,11 @@ class Organization extends Model
         return $this->hasMany(OrganizationEvent::class)->orderBy('starts_at');
     }
 
+    public function announcements(): HasMany
+    {
+        return $this->hasMany(OrganizationAnnouncement::class)->latest();
+    }
+
     public function members(): HasMany
     {
         return $this->hasMany(OrganizationMember::class);
