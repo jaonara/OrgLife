@@ -14,34 +14,64 @@ class OrganizationManagementAndAnnouncementsTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_officer_can_remove_a_regular_member_but_not_themselves_or_the_president(): void
+    public function test_only_the_president_can_remove_members_and_cannot_remove_themselves(): void
     {
         $officer = User::factory()->create();
         $president = User::factory()->create();
+        $vicePresident = User::factory()->create();
         $member = User::factory()->create();
         $organization = $this->organization();
         $officerMembership = $this->membership($organization, $officer, 'Officer');
         $presidentMembership = $this->membership($organization, $president, 'President');
+        $vicePresidentMembership = $this->membership($organization, $vicePresident, 'Vice President');
         $memberMembership = $this->membership($organization, $member);
 
         Sanctum::actingAs($officer);
 
         $this->deleteJson("/api/officer/organizations/{$organization->id}/members/{$memberMembership->id}")
+            ->assertForbidden();
+        $this->assertDatabaseHas('organization_members', ['id' => $memberMembership->id]);
+        $this->deleteJson("/api/officer/organizations/{$organization->id}/members/{$vicePresidentMembership->id}")
+            ->assertForbidden();
+
+        Sanctum::actingAs($vicePresident);
+        $this->deleteJson("/api/officer/organizations/{$organization->id}/members/{$memberMembership->id}")
+            ->assertForbidden();
+
+        Sanctum::actingAs($president);
+        $this->deleteJson("/api/officer/organizations/{$organization->id}/members/{$memberMembership->id}")
             ->assertOk();
         $this->assertDatabaseMissing('organization_members', ['id' => $memberMembership->id]);
-
         $this->deleteJson("/api/officer/organizations/{$organization->id}/members/{$officerMembership->id}")
-            ->assertConflict();
+            ->assertOk();
+        $this->assertDatabaseMissing('organization_members', ['id' => $officerMembership->id]);
         $this->deleteJson("/api/officer/organizations/{$organization->id}/members/{$presidentMembership->id}")
             ->assertConflict();
+        $this->assertDatabaseHas('organization_members', ['id' => $vicePresidentMembership->id]);
     }
 
-    public function test_only_officers_can_manage_members_and_promote_a_regular_member(): void
+    public function test_treasurer_cannot_remove_members(): void
+    {
+        $treasurer = User::factory()->create();
+        $member = User::factory()->create();
+        $organization = $this->organization();
+        $this->membership($organization, $treasurer, 'Treasurer');
+        $memberMembership = $this->membership($organization, $member);
+
+        Sanctum::actingAs($treasurer);
+        $this->deleteJson("/api/officer/organizations/{$organization->id}/members/{$memberMembership->id}")
+            ->assertForbidden();
+        $this->assertDatabaseHas('organization_members', ['id' => $memberMembership->id]);
+    }
+
+    public function test_only_the_president_can_promote_a_regular_member(): void
     {
         $officer = User::factory()->create();
+        $president = User::factory()->create();
         $member = User::factory()->create();
         $organization = $this->organization();
         $this->membership($organization, $officer, 'Officer');
+        $this->membership($organization, $president, 'President');
         $memberMembership = $this->membership($organization, $member);
 
         Sanctum::actingAs($member);
@@ -49,6 +79,10 @@ class OrganizationManagementAndAnnouncementsTest extends TestCase
             ->assertForbidden();
 
         Sanctum::actingAs($officer);
+        $this->patchJson("/api/officer/organizations/{$organization->id}/members/{$memberMembership->id}")
+            ->assertForbidden();
+
+        Sanctum::actingAs($president);
         $this->patchJson("/api/officer/organizations/{$organization->id}/members/{$memberMembership->id}")
             ->assertOk()
             ->assertJsonPath('data.role', 'Officer')
@@ -65,14 +99,45 @@ class OrganizationManagementAndAnnouncementsTest extends TestCase
         ]);
     }
 
-    public function test_officers_can_post_announcements_and_members_see_only_their_organizations(): void
+    public function test_vice_president_and_treasurer_cannot_use_president_tools(): void
+    {
+        $vicePresident = User::factory()->create();
+        $treasurer = User::factory()->create();
+        $organization = $this->organization();
+        $this->membership($organization, $vicePresident, 'Vice President');
+        $this->membership($organization, $treasurer, 'Treasurer');
+
+        Sanctum::actingAs($vicePresident);
+        $this->postJson("/api/organizations/{$organization->id}/announcements", [
+            'title' => 'Vice President update',
+            'body' => 'An update from the vice president.',
+        ])->assertForbidden();
+        $this->getJson("/api/officer/organizations/{$organization->id}/events")
+            ->assertForbidden();
+        $this->getJson('/api/officer/requests')
+            ->assertOk()
+            ->assertJsonCount(0, 'data');
+
+        Sanctum::actingAs($treasurer);
+        $this->postJson("/api/organizations/{$organization->id}/announcements", [
+            'title' => 'Treasurer update',
+            'body' => 'An update from the treasurer.',
+        ])->assertForbidden();
+        $this->getJson("/api/officer/organizations/{$organization->id}/events")
+            ->assertForbidden();
+        $this->getJson('/api/officer/requests')
+            ->assertOk()
+            ->assertJsonCount(0, 'data');
+    }
+
+    public function test_presidents_can_post_announcements_and_members_see_only_their_organizations(): void
     {
         $officer = User::factory()->create();
         $member = User::factory()->create();
         $outsider = User::factory()->create();
         $firstOrganization = $this->organization(['name' => 'Computer Society']);
         $secondOrganization = $this->organization(['name' => 'Arts Collective']);
-        $this->membership($firstOrganization, $officer, 'Officer');
+        $this->membership($firstOrganization, $officer, 'President');
         $this->membership($firstOrganization, $member);
         $this->membership($secondOrganization, $member);
         $this->membership($secondOrganization, $outsider);
@@ -83,6 +148,7 @@ class OrganizationManagementAndAnnouncementsTest extends TestCase
             'body' => 'The first meeting is next week.',
         ])->assertCreated()
             ->assertJsonPath('data.organization.name', 'Computer Society')
+            ->assertJsonPath('data.organization.college', $firstOrganization->college)
             ->assertJsonPath('data.author.name', $officer->name);
 
         Sanctum::actingAs($member);
@@ -101,6 +167,68 @@ class OrganizationManagementAndAnnouncementsTest extends TestCase
         $this->getJson("/api/organizations/{$firstOrganization->id}")
             ->assertOk()
             ->assertJsonCount(0, 'data.announcements');
+    }
+
+    public function test_only_president_can_delete_organization_announcements(): void
+    {
+        $president = User::factory()->create();
+        $vicePresident = User::factory()->create();
+        $organization = $this->organization();
+        $this->membership($organization, $president, 'President');
+        $this->membership($organization, $vicePresident, 'Vice President');
+        $announcement = OrganizationAnnouncement::create([
+            'organization_id' => $organization->id,
+            'user_id' => $president->id,
+            'title' => 'Important update',
+            'body' => 'Details of the update.',
+        ]);
+
+        Sanctum::actingAs($vicePresident);
+        $this->deleteJson("/api/organizations/{$organization->id}/announcements/{$announcement->id}")
+            ->assertForbidden();
+        $this->assertDatabaseHas('organization_announcements', ['id' => $announcement->id]);
+
+        Sanctum::actingAs($president);
+        $this->deleteJson("/api/organizations/{$organization->id}/announcements/{$announcement->id}")
+            ->assertOk()
+            ->assertJsonPath('message', 'Announcement deleted.');
+        $this->assertDatabaseMissing('organization_announcements', ['id' => $announcement->id]);
+    }
+
+    public function test_admin_can_manage_an_organization_without_membership(): void
+    {
+        $admin = User::factory()->create();
+        $admin->forceFill(['is_admin' => true])->save();
+        $member = User::factory()->create();
+        $organization = $this->organization();
+        $this->membership($organization, $member);
+        $announcement = OrganizationAnnouncement::create([
+            'organization_id' => $organization->id,
+            'user_id' => $member->id,
+            'title' => 'Campus update',
+            'body' => 'An update for all members.',
+        ]);
+
+        Sanctum::actingAs($admin);
+        $this->getJson("/api/organizations/{$organization->id}")
+            ->assertOk()
+            ->assertJsonPath('data.announcements.0.id', $announcement->id);
+        $this->getJson("/api/organizations/{$organization->id}/members")
+            ->assertOk()
+            ->assertJsonCount(1, 'data');
+        $this->deleteJson("/api/organizations/{$organization->id}/announcements/{$announcement->id}")
+            ->assertOk();
+
+        $request = \App\Models\MembershipRequest::create([
+            'organization_id' => $organization->id,
+            'user_id' => User::factory()->create()->id,
+            'status' => 'pending',
+        ]);
+        $this->getJson('/api/officer/requests')
+            ->assertOk()
+            ->assertJsonPath('data.0.id', $request->id);
+        $this->patchJson("/api/officer/requests/{$request->id}", ['status' => 'approved'])
+            ->assertOk();
     }
 
     public function test_regular_members_cannot_post_and_announcement_content_is_validated(): void

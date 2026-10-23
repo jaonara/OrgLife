@@ -17,6 +17,8 @@ use Illuminate\Validation\Rule;
 
 class OrganizationController extends Controller
 {
+    private const OFFICER_ROLES = ['President', 'Vice President', 'Treasurer', 'Officer'];
+
     private const COLLEGES = [
         ['code' => 'CCS', 'name' => 'College of Computer Studies'],
         ['code' => 'CBA', 'name' => 'College of Business Administration'],
@@ -61,6 +63,7 @@ class OrganizationController extends Controller
         $membership = $request->user()
             ? $organization->members()->where('user_id', $request->user()->id)->first()
             : null;
+        $canViewOrganizationTools = $membership !== null || $request->user()?->is_admin;
 
         $organization->load([
             'events' => fn ($events) => $events
@@ -71,12 +74,12 @@ class OrganizationController extends Controller
                 ->with(['attendances' => fn ($query) => $membership
                     ? $query->where('user_id', $membership->user_id)
                     : $query->whereRaw('1 = 0')]),
-            'announcements' => fn ($announcements) => $membership
-                ? $announcements->with(['author:id,name', 'organization:id,name'])
+            'announcements' => fn ($announcements) => $canViewOrganizationTools
+                ? $announcements->with(['author:id,name,profile_picture_path', 'organization:id,name,college'])
                 : $announcements->whereRaw('1 = 0'),
             'members' => fn ($members) => $members
-                ->whereIn('role', ['President', 'Officer'])
-                ->with('user:id,name'),
+                ->whereIn('role', self::OFFICER_ROLES)
+                ->with('user:id,name,profile_picture_path'),
         ])->loadCount('members');
 
         $membershipRequest = $request->user()
@@ -90,9 +93,10 @@ class OrganizationController extends Controller
                 'officers' => $organization->members->map(fn (OrganizationMember $member) => [
                     'name' => $member->user->name,
                     'role' => $member->role,
+                    'profile_picture_url' => $member->user->profile_picture_url,
                 ])->values(),
                 'events' => $organization->events->map(fn (OrganizationEvent $event) => $this->eventData($event))->values(),
-                'announcements' => $membership
+                'announcements' => $canViewOrganizationTools
                     ? $organization->announcements->map(fn (OrganizationAnnouncement $announcement) => $this->announcementData($announcement))->values()
                     : [],
                 'membership_role' => $membership?->role,
@@ -159,6 +163,21 @@ class OrganizationController extends Controller
 
     public function myOrganizations(Request $request)
     {
+        if ($request->user()->is_admin) {
+            return response()->json([
+                'data' => Organization::query()->orderBy('name')->get()
+                    ->map(fn (Organization $organization) => [
+                        'id' => $organization->id,
+                        'name' => $organization->name,
+                        'category' => $organization->category,
+                        'college' => $organization->college,
+                        'role' => $request->user()->organizationMemberships()
+                            ->where('organization_id', $organization->id)
+                            ->value('role') ?? 'Admin',
+                    ]),
+            ]);
+        }
+
         return response()->json([
             'data' => $request->user()->organizationMemberships()
                 ->with('organization')
@@ -176,13 +195,13 @@ class OrganizationController extends Controller
 
     public function officerRequests(Request $request)
     {
-        $organizationIds = $request->user()->organizationMemberships()
-            ->whereIn('role', ['President', 'Officer'])
-            ->select('organization_id');
+        $organizationIds = $request->user()->is_admin
+            ? Organization::query()->select('id')
+            : $request->user()->organizationMemberships()->where('role', 'President')->select('organization_id');
 
         $requests = MembershipRequest::query()
             ->whereIn('organization_id', $organizationIds)
-            ->with(['user:id,name,email', 'organization:id,name'])
+            ->with(['user:id,name,email,profile_picture_path', 'organization:id,name'])
             ->when($request->filled('organization_id'), fn (Builder $query) => $query->where('organization_id', $request->integer('organization_id')))
             ->when($request->input('status', 'pending') !== 'all', fn (Builder $query) => $query->where('status', $request->input('status', 'pending')))
             ->latest()
@@ -193,13 +212,12 @@ class OrganizationController extends Controller
 
     public function decideRequest(Request $request, MembershipRequest $membershipRequest)
     {
-        abort_unless(
-            $request->user()->organizationMemberships()
+        abort_unless($request->user()->is_admin || $request->user()->organizationMemberships()
                 ->where('organization_id', $membershipRequest->organization_id)
-                ->whereIn('role', ['President', 'Officer'])
+                ->where('role', 'President')
                 ->exists(),
             403,
-            'Only organization officers can review join requests.',
+            'Only the organization president can review join requests.',
         );
         abort_if($membershipRequest->status !== 'pending', 409, 'This request has already been reviewed.');
 
@@ -234,15 +252,15 @@ class OrganizationController extends Controller
     public function members(Request $request, Organization $organization)
     {
         abort_unless(
-            $organization->members()->where('user_id', $request->user()->id)->exists(),
+            $request->user()->is_admin || $organization->members()->where('user_id', $request->user()->id)->exists(),
             403,
             'Only organization members can view the member list.',
         );
 
         return response()->json([
             'data' => $organization->members()
-                ->with('user:id,name,email')
-                ->orderByRaw("CASE role WHEN 'President' THEN 0 WHEN 'Officer' THEN 1 ELSE 2 END")
+                ->with('user:id,name,email,profile_picture_path')
+                ->orderByRaw("CASE role WHEN 'President' THEN 0 WHEN 'Vice President' THEN 1 WHEN 'Treasurer' THEN 2 WHEN 'Officer' THEN 3 ELSE 4 END")
                 ->orderBy('joined_at')
                 ->get()
                 ->map(fn (OrganizationMember $membership) => [
@@ -250,6 +268,7 @@ class OrganizationController extends Controller
                     'user_id' => $membership->user_id,
                     'name' => $membership->user->name,
                     'email' => $membership->user->email,
+                    'profile_picture_url' => $membership->user->profile_picture_url,
                     'role' => $membership->role,
                     'joined_at' => $membership->joined_at,
                 ]),
@@ -258,7 +277,7 @@ class OrganizationController extends Controller
 
     public function removeMember(Request $request, Organization $organization, OrganizationMember $member)
     {
-        $this->authorizeOfficer($request, $organization);
+        $this->authorizePresident($request, $organization);
         abort_unless($member->organization_id === $organization->id, 404);
         abort_if($member->user_id === $request->user()->id, 409, 'You cannot remove yourself from the organization.');
         abort_if($member->role === 'President', 409, 'The organization president cannot be removed.');
@@ -270,11 +289,11 @@ class OrganizationController extends Controller
 
     public function promoteMember(Request $request, Organization $organization, OrganizationMember $member)
     {
-        $this->authorizeOfficer($request, $organization);
+        $this->authorizePresident($request, $organization);
         abort_unless($member->organization_id === $organization->id, 404);
         abort_if($member->role !== 'Member', 409, 'Only regular members can be promoted to officer.');
 
-        $member->load('user:id,name,email');
+        $member->load('user:id,name,email,profile_picture_path');
         $member->update(['role' => 'Officer']);
 
         return response()->json([
@@ -284,6 +303,7 @@ class OrganizationController extends Controller
                 'user_id' => $member->user_id,
                 'name' => $member->user->name,
                 'email' => $member->user->email,
+                'profile_picture_url' => $member->user->profile_picture_url,
                 'role' => $member->role,
                 'joined_at' => $member->joined_at,
             ],
@@ -292,12 +312,14 @@ class OrganizationController extends Controller
 
     public function announcements(Request $request)
     {
-        $organizationIds = $request->user()->organizationMemberships()->select('organization_id');
+        $organizationIds = $request->user()->is_admin
+            ? Organization::query()->select('id')
+            : $request->user()->organizationMemberships()->select('organization_id');
 
         return response()->json([
             'data' => OrganizationAnnouncement::query()
                 ->whereIn('organization_id', $organizationIds)
-                ->with(['organization:id,name', 'author:id,name'])
+                ->with(['organization:id,name,college', 'author:id,name,profile_picture_path'])
                 ->latest()
                 ->get()
                 ->map(fn (OrganizationAnnouncement $announcement) => $this->announcementData($announcement)),
@@ -306,7 +328,7 @@ class OrganizationController extends Controller
 
     public function postAnnouncement(Request $request, Organization $organization)
     {
-        $this->authorizeOfficer($request, $organization);
+        $this->authorizePresident($request, $organization);
 
         $validated = $request->validate([
             'title' => ['required', 'string', 'max:160'],
@@ -316,7 +338,7 @@ class OrganizationController extends Controller
         $announcement = $organization->announcements()->create([
             ...$validated,
             'user_id' => $request->user()->id,
-        ])->load(['organization:id,name', 'author:id,name']);
+        ])->load(['organization:id,name,college', 'author:id,name,profile_picture_path']);
 
         return response()->json([
             'message' => 'Announcement posted.',
@@ -324,14 +346,26 @@ class OrganizationController extends Controller
         ], 201);
     }
 
+    public function deleteAnnouncement(Request $request, Organization $organization, OrganizationAnnouncement $announcement)
+    {
+        $this->authorizePresident($request, $organization);
+        abort_unless($announcement->organization_id === $organization->id, 404);
+
+        $announcement->delete();
+
+        return response()->json(['message' => 'Announcement deleted.']);
+    }
+
     public function myEvents(Request $request)
     {
-        $organizationIds = $request->user()->organizationMemberships()->select('organization_id');
+        $organizationIds = $request->user()->is_admin
+            ? Organization::query()->select('id')
+            : $request->user()->organizationMemberships()->select('organization_id');
 
         return response()->json([
             'data' => OrganizationEvent::query()
                 ->whereIn('organization_id', $organizationIds)
-                ->with('organization:id,name')
+                ->with('organization:id,name,college')
                 ->withCount([
                     'attendances as rsvp_count' => fn ($query) => $query->whereNotNull('rsvp_at'),
                     'attendances as attendance_count' => fn ($query) => $query->whereNotNull('attended_at'),
@@ -387,9 +421,19 @@ class OrganizationController extends Controller
         ]);
     }
 
+    public function deleteEvent(Request $request, Organization $organization, OrganizationEvent $event)
+    {
+        $this->authorizePresident($request, $organization);
+        $this->assertEventBelongsToOrganization($event, $organization);
+
+        $event->delete();
+
+        return response()->json(['message' => 'Event deleted.']);
+    }
+
     public function officerEvents(Request $request, Organization $organization)
     {
-        $this->authorizeOfficer($request, $organization);
+        $this->authorizePresident($request, $organization);
 
         return response()->json([
             'data' => $organization->events()
@@ -406,9 +450,9 @@ class OrganizationController extends Controller
     public function eventAttendance(Request $request, OrganizationEvent $event)
     {
         $organization = $event->organization;
-        $this->authorizeOfficer($request, $organization);
+        $this->authorizePresident($request, $organization);
 
-        $members = $organization->members()->with('user:id,name,email')->get();
+        $members = $organization->members()->with('user:id,name,email,profile_picture_path')->get();
         $attendance = $event->attendances()
             ->whereIn('user_id', $members->pluck('user_id'))
             ->get()
@@ -419,6 +463,7 @@ class OrganizationController extends Controller
                 'user_id' => $membership->user_id,
                 'name' => $membership->user->name,
                 'email' => $membership->user->email,
+                'profile_picture_url' => $membership->user->profile_picture_url,
                 'role' => $membership->role,
                 'rsvped' => $attendance->get($membership->user_id)?->rsvp_at !== null,
                 'attended' => $attendance->get($membership->user_id)?->attended_at !== null,
@@ -429,7 +474,7 @@ class OrganizationController extends Controller
     public function markEventAttendance(Request $request, OrganizationEvent $event, User $user)
     {
         $organization = $event->organization;
-        $this->authorizeOfficer($request, $organization);
+        $this->authorizePresident($request, $organization);
         abort_unless(
             $organization->members()->where('user_id', $user->id)->exists(),
             404,
@@ -471,19 +516,20 @@ class OrganizationController extends Controller
             'organization' => $event->relationLoaded('organization') && $event->organization ? [
                 'id' => $event->organization->id,
                 'name' => $event->organization->name,
+                'college' => $event->organization->college,
             ] : null,
         ];
     }
 
-    private function authorizeOfficer(Request $request, Organization $organization): void
+    private function authorizePresident(Request $request, Organization $organization): void
     {
         abort_unless(
-            $request->user()->organizationMemberships()
+            $request->user()->is_admin || $request->user()->organizationMemberships()
                 ->where('organization_id', $organization->id)
-                ->whereIn('role', ['President', 'Officer'])
+                ->where('role', 'President')
                 ->exists(),
             403,
-            'Only organization officers can manage members or post announcements.',
+            'Only the organization president can manage organization tools.',
         );
     }
 
@@ -497,10 +543,12 @@ class OrganizationController extends Controller
             'organization' => [
                 'id' => $announcement->organization->id,
                 'name' => $announcement->organization->name,
+                'college' => $announcement->organization->college,
             ],
             'author' => [
                 'id' => $announcement->author->id,
                 'name' => $announcement->author->name,
+                'profile_picture_url' => $announcement->author->profile_picture_url,
             ],
         ];
     }

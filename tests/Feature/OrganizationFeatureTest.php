@@ -81,15 +81,27 @@ class OrganizationFeatureTest extends TestCase
         $this->assertNotSame($allCollegeOrg->id, $computerSociety->id);
     }
 
-    public function test_member_can_request_withdraw_and_reapply_and_officer_can_approve(): void
+    public function test_member_can_request_withdraw_and_reapply_and_president_can_approve(): void
     {
         $student = User::factory()->create();
         $officer = User::factory()->create();
+        $vicePresident = User::factory()->create();
+        $treasurer = User::factory()->create();
         $organization = $this->organization();
         OrganizationMember::create([
             'organization_id' => $organization->id,
             'user_id' => $officer->id,
-            'role' => 'Officer',
+            'role' => 'President',
+        ]);
+        OrganizationMember::create([
+            'organization_id' => $organization->id,
+            'user_id' => $vicePresident->id,
+            'role' => 'Vice President',
+        ]);
+        OrganizationMember::create([
+            'organization_id' => $organization->id,
+            'user_id' => $treasurer->id,
+            'role' => 'Treasurer',
         ]);
 
         Sanctum::actingAs($student);
@@ -106,6 +118,22 @@ class OrganizationFeatureTest extends TestCase
             ->assertJsonPath('data.0.status', 'withdrawn');
         $this->postJson("/api/organizations/{$organization->id}/membership-requests")
             ->assertCreated();
+
+        $pendingRequestId = MembershipRequest::query()
+            ->where('organization_id', $organization->id)
+            ->where('user_id', $student->id)
+            ->value('id');
+
+        Sanctum::actingAs($vicePresident);
+        $this->getJson('/api/officer/requests')
+            ->assertOk()
+            ->assertJsonCount(0, 'data');
+        $this->patchJson("/api/officer/requests/{$pendingRequestId}", ['status' => 'approved'])
+            ->assertForbidden();
+
+        Sanctum::actingAs($treasurer);
+        $this->patchJson("/api/officer/requests/{$pendingRequestId}", ['status' => 'approved'])
+            ->assertForbidden();
 
         Sanctum::actingAs($officer);
         $pending = $this->getJson('/api/officer/requests')
@@ -125,11 +153,11 @@ class OrganizationFeatureTest extends TestCase
             ->assertJsonPath('data.0.role', 'Member');
         $this->getJson("/api/organizations/{$organization->id}/members")
             ->assertOk()
-            ->assertJsonFragment(['name' => $officer->name, 'role' => 'Officer'])
+            ->assertJsonFragment(['name' => $officer->name, 'role' => 'President'])
             ->assertJsonFragment(['name' => $student->name, 'role' => 'Member']);
     }
 
-    public function test_only_officers_can_decide_requests_and_declined_requests_show_status(): void
+    public function test_only_the_president_can_decide_requests_and_declined_requests_show_status(): void
     {
         $student = User::factory()->create();
         $otherMember = User::factory()->create();

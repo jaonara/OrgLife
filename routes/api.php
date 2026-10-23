@@ -13,6 +13,8 @@ Route::post('/login', [AuthController::class, 'login']);
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/user', [AuthController::class, 'me']);
+    Route::patch('/profile', [UserController::class, 'updateProfile']);
+    Route::delete('/profile-picture', [UserController::class, 'removeProfilePicture']);
 
     Route::get('/users', [UserController::class, 'index']);
     Route::post('/users', [UserController::class, 'store']);
@@ -30,6 +32,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/announcements', [OrganizationController::class, 'announcements']);
     Route::get('/my-events', [OrganizationController::class, 'myEvents']);
     Route::post('/organizations/{organization}/announcements', [OrganizationController::class, 'postAnnouncement']);
+    Route::delete('/organizations/{organization}/announcements/{announcement}', [OrganizationController::class, 'deleteAnnouncement']);
+    Route::delete('/organizations/{organization}/events/{event}', [OrganizationController::class, 'deleteEvent']);
     Route::post('/organizations/{organization}/events/{event}/rsvp', [OrganizationController::class, 'rsvpToEvent']);
     Route::delete('/organizations/{organization}/events/{event}/rsvp', [OrganizationController::class, 'cancelEventRsvp']);
     Route::get('/officer/organizations/{organization}/events', [OrganizationController::class, 'officerEvents']);
