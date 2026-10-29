@@ -14,12 +14,16 @@ class OrganizationEvent extends Model
         'description',
         'location',
         'starts_at',
+        'seat_limit',
+        'cancelled_at',
     ];
 
     protected function casts(): array
     {
         return [
             'starts_at' => 'datetime',
+            'seat_limit' => 'integer',
+            'cancelled_at' => 'datetime',
         ];
     }
 

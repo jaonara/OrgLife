@@ -10,6 +10,7 @@ const paths = {
   calendar: <><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M16 3v4M8 3v4M3 10h18M8 14h.01M12 14h.01M16 14h.01M8 17h.01M12 17h.01" /></>,
   announcement: <><path d="M4 11v2a2 2 0 0 0 2 2h2l9 5V4l-9 5H6a2 2 0 0 0-2 2ZM8 15l2 6h4l-3-8" /><path d="M20 9a4 4 0 0 1 0 6" /></>,
   check: <><path d="m5 12 4 4L19 6" /></>,
+  dues: <><circle cx="12" cy="12" r="9" /><path d="M15.5 8.5c-.7-.7-1.6-1-3-1-1.6 0-2.7.8-2.7 2 0 3 5.4 1.4 5.4 4.5 0 1.2-1.1 2.2-2.9 2.2-1.3 0-2.5-.5-3.3-1.4M12.2 5.5v13" /></>,
 }
 
 function Icon({ name, className = '' }) {

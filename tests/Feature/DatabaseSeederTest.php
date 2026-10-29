@@ -105,7 +105,7 @@ class DatabaseSeederTest extends TestCase
             ->where('title', 'like', '%Research Publication%')
             ->firstOrFail();
         $this->assertStringContainsString('ABL Publisher Opc', $researchAnnouncement->body);
-        $this->assertSame('2026-10-23', $researchAnnouncement->created_at->toDateString());
+        $this->assertSame(now()->toDateString(), $researchAnnouncement->created_at->toDateString());
         $this->assertSame($jao->id, $researchAnnouncement->user_id);
 
         $artsAndSciences = Organization::where('college', 'CAS')->firstOrFail();
@@ -114,7 +114,7 @@ class DatabaseSeederTest extends TestCase
             ->where('title', 'Museums and Galleries Month Celebration')
             ->firstOrFail();
         $this->assertStringContainsString('Crafting Opportunities for the New World', $museumsAnnouncement->body);
-        $this->assertSame('2026-10-23', $museumsAnnouncement->created_at->toDateString());
+        $this->assertSame(now()->toDateString(), $museumsAnnouncement->created_at->toDateString());
         $this->assertSame($jao->id, $museumsAnnouncement->user_id);
 
         $engineering = Organization::where('college', 'COE')->firstOrFail();
@@ -124,7 +124,7 @@ class DatabaseSeederTest extends TestCase
             ->firstOrFail();
         $this->assertStringContainsString('JPICE', $engineeringAnnouncement->body);
         $this->assertStringContainsString('#PICEGeneralAssembly2026', $engineeringAnnouncement->body);
-        $this->assertSame('2026-10-23', $engineeringAnnouncement->created_at->toDateString());
+        $this->assertSame(now()->toDateString(), $engineeringAnnouncement->created_at->toDateString());
         $this->assertSame($jao->id, $engineeringAnnouncement->user_id);
 
         $organizations = Organization::query()->get();

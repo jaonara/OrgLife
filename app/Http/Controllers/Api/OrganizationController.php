@@ -17,7 +17,9 @@ use Illuminate\Validation\Rule;
 
 class OrganizationController extends Controller
 {
-    private const OFFICER_ROLES = ['President', 'Vice President', 'Treasurer', 'Officer'];
+    private const OFFICER_ROLES = ['President', 'Vice President', 'Treasurer', 'Secretary', 'P.I.O', 'Auditor', 'Officer'];
+
+    private const ASSIGNABLE_OFFICER_ROLES = ['Vice President', 'Treasurer', 'Secretary', 'P.I.O', 'Auditor'];
 
     private const COLLEGES = [
         ['code' => 'CCS', 'name' => 'College of Computer Studies'],
@@ -213,9 +215,9 @@ class OrganizationController extends Controller
     public function decideRequest(Request $request, MembershipRequest $membershipRequest)
     {
         abort_unless($request->user()->is_admin || $request->user()->organizationMemberships()
-                ->where('organization_id', $membershipRequest->organization_id)
-                ->where('role', 'President')
-                ->exists(),
+            ->where('organization_id', $membershipRequest->organization_id)
+            ->where('role', 'President')
+            ->exists(),
             403,
             'Only the organization president can review join requests.',
         );
@@ -260,7 +262,7 @@ class OrganizationController extends Controller
         return response()->json([
             'data' => $organization->members()
                 ->with('user:id,name,email,profile_picture_path')
-                ->orderByRaw("CASE role WHEN 'President' THEN 0 WHEN 'Vice President' THEN 1 WHEN 'Treasurer' THEN 2 WHEN 'Officer' THEN 3 ELSE 4 END")
+                ->orderByRaw("CASE role WHEN 'President' THEN 0 WHEN 'Vice President' THEN 1 WHEN 'Treasurer' THEN 2 WHEN 'Secretary' THEN 3 WHEN 'P.I.O' THEN 4 WHEN 'Auditor' THEN 5 WHEN 'Officer' THEN 6 ELSE 7 END")
                 ->orderBy('joined_at')
                 ->get()
                 ->map(fn (OrganizationMember $membership) => [
@@ -291,13 +293,18 @@ class OrganizationController extends Controller
     {
         $this->authorizePresident($request, $organization);
         abort_unless($member->organization_id === $organization->id, 404);
-        abort_if($member->role !== 'Member', 409, 'Only regular members can be promoted to officer.');
+        abort_if($member->role === 'President', 409, 'The organization president role cannot be changed.');
+        abort_if($member->user_id === $request->user()->id, 409, 'You cannot change your own role.');
+
+        $validated = $request->validate([
+            'role' => ['required', Rule::in(self::ASSIGNABLE_OFFICER_ROLES)],
+        ]);
 
         $member->load('user:id,name,email,profile_picture_path');
-        $member->update(['role' => 'Officer']);
+        $member->update(['role' => $validated['role']]);
 
         return response()->json([
-            'message' => 'Member promoted to officer.',
+            'message' => 'Member role updated.',
             'data' => [
                 'id' => $member->id,
                 'user_id' => $member->user_id,
@@ -385,14 +392,31 @@ class OrganizationController extends Controller
             403,
             'Only organization members can RSVP to its events.',
         );
+        abort_if($event->cancelled_at, 409, 'This event has been cancelled.');
         abort_if($event->starts_at->isPast(), 409, 'You cannot RSVP to an event that has already started.');
 
-        $attendance = OrganizationEventAttendance::firstOrNew([
-            'organization_event_id' => $event->id,
-            'user_id' => $request->user()->id,
-        ]);
-        $attendance->rsvp_at ??= now();
-        $attendance->save();
+        DB::transaction(function () use ($event, $request) {
+            $lockedEvent = OrganizationEvent::query()->lockForUpdate()->findOrFail($event->id);
+            abort_if($lockedEvent->cancelled_at, 409, 'This event has been cancelled.');
+            abort_if($lockedEvent->starts_at->isPast(), 409, 'You cannot RSVP to an event that has already started.');
+
+            $attendance = OrganizationEventAttendance::firstOrNew([
+                'organization_event_id' => $lockedEvent->id,
+                'user_id' => $request->user()->id,
+            ]);
+
+            if ($attendance->rsvp_at) {
+                return;
+            }
+
+            $rsvpCount = $lockedEvent->attendances()->whereNotNull('rsvp_at')->count();
+            if ($lockedEvent->seat_limit !== null && $rsvpCount >= $lockedEvent->seat_limit) {
+                abort(409, 'This event has reached its seat limit.');
+            }
+
+            $attendance->rsvp_at = now();
+            $attendance->save();
+        });
 
         return response()->json([
             'message' => 'You are RSVP’d for this event.',
@@ -429,6 +453,79 @@ class OrganizationController extends Controller
         $event->delete();
 
         return response()->json(['message' => 'Event deleted.']);
+    }
+
+    public function createEvent(Request $request, Organization $organization)
+    {
+        $this->authorizePresident($request, $organization);
+        $validated = $request->validate($this->eventRules());
+
+        $event = $organization->events()->create($validated);
+        $event->loadCount([
+            'attendances as rsvp_count' => fn ($query) => $query->whereNotNull('rsvp_at'),
+            'attendances as attendance_count' => fn ($query) => $query->whereNotNull('attended_at'),
+        ]);
+
+        return response()->json([
+            'message' => 'Event created.',
+            'data' => $this->eventData($event),
+        ], 201);
+    }
+
+    public function updateEvent(Request $request, Organization $organization, OrganizationEvent $event)
+    {
+        $this->authorizePresident($request, $organization);
+        $this->assertEventBelongsToOrganization($event, $organization);
+        abort_if($event->cancelled_at, 409, 'A cancelled event cannot be edited.');
+        abort_if($event->starts_at->isPast(), 409, 'A past event cannot be edited.');
+
+        $validated = $request->validate($this->eventRules());
+        DB::transaction(function () use ($event, $validated) {
+            $event = OrganizationEvent::query()->lockForUpdate()->findOrFail($event->id);
+            abort_if($event->cancelled_at, 409, 'A cancelled event cannot be edited.');
+            abort_if($event->starts_at->isPast(), 409, 'A past event cannot be edited.');
+            $rsvpCount = $event->attendances()->whereNotNull('rsvp_at')->count();
+            abort_if(
+                $validated['seat_limit'] < $rsvpCount,
+                409,
+                "Seat limit cannot be lower than the {$rsvpCount} existing RSVPs.",
+            );
+            $event->update($validated);
+        });
+        $event->refresh();
+
+        $event->loadCount([
+            'attendances as rsvp_count' => fn ($query) => $query->whereNotNull('rsvp_at'),
+            'attendances as attendance_count' => fn ($query) => $query->whereNotNull('attended_at'),
+        ]);
+
+        return response()->json([
+            'message' => 'Event updated.',
+            'data' => $this->eventData($event),
+        ]);
+    }
+
+    public function cancelEvent(Request $request, Organization $organization, OrganizationEvent $event)
+    {
+        $this->authorizePresident($request, $organization);
+        $this->assertEventBelongsToOrganization($event, $organization);
+
+        DB::transaction(function () use ($event) {
+            $event = OrganizationEvent::query()->lockForUpdate()->findOrFail($event->id);
+            abort_if($event->cancelled_at, 409, 'This event has already been cancelled.');
+            abort_if($event->starts_at->isPast(), 409, 'A past event cannot be cancelled.');
+            $event->update(['cancelled_at' => now()]);
+        });
+        $event->refresh();
+        $event->loadCount([
+            'attendances as rsvp_count' => fn ($query) => $query->whereNotNull('rsvp_at'),
+            'attendances as attendance_count' => fn ($query) => $query->whereNotNull('attended_at'),
+        ]);
+
+        return response()->json([
+            'message' => 'Event cancelled. RSVP and attendance history have been preserved.',
+            'data' => $this->eventData($event),
+        ]);
     }
 
     public function officerEvents(Request $request, Organization $organization)
@@ -475,6 +572,7 @@ class OrganizationController extends Controller
     {
         $organization = $event->organization;
         $this->authorizePresident($request, $organization);
+        abort_if($event->cancelled_at, 409, 'Attendance cannot be recorded for a cancelled event.');
         abort_unless(
             $organization->members()->where('user_id', $user->id)->exists(),
             404,
@@ -508,6 +606,9 @@ class OrganizationController extends Controller
             'description' => $event->description,
             'location' => $event->location,
             'starts_at' => $event->starts_at,
+            'seat_limit' => $event->seat_limit,
+            'cancelled_at' => $event->cancelled_at,
+            'is_cancelled' => $event->cancelled_at !== null,
             'is_past' => $event->starts_at->isPast(),
             'rsvp_count' => (int) ($event->rsvp_count ?? 0),
             'attendance_count' => (int) ($event->attendance_count ?? 0),
@@ -518,6 +619,17 @@ class OrganizationController extends Controller
                 'name' => $event->organization->name,
                 'college' => $event->organization->college,
             ] : null,
+        ];
+    }
+
+    private function eventRules(): array
+    {
+        return [
+            'title' => ['required', 'string', 'max:255'],
+            'description' => ['nullable', 'string', 'max:5000'],
+            'location' => ['required', 'string', 'max:255'],
+            'starts_at' => ['required', 'date', 'after:now'],
+            'seat_limit' => ['required', 'integer', 'min:1', 'max:1000000'],
         ];
     }
 

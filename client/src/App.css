@@ -2190,7 +2190,7 @@ footer {
 
 .officer-member-row {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) auto auto;
+  grid-template-columns: minmax(180px, 1fr) auto;
   align-items: center;
   gap: 12px;
   min-width: 0;
@@ -2242,18 +2242,1213 @@ footer {
   font-weight: 700;
 }
 
-.officer-member-row .role-pill {
-  justify-self: start;
-  white-space: nowrap;
-}
-
 .officer-member-row .decision-buttons {
   justify-content: flex-end;
   flex-wrap: wrap;
 }
 
+.officer-role-select {
+  min-height: 34px;
+  padding: 6px 9px;
+  border: 1px solid #dfe5ed;
+  border-radius: 7px;
+  color: #33445a;
+  background: #fff;
+}
+
 .member-row-spacer {
   min-width: 1px;
+}
+
+.event-management-form,
+.proposal-form {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid #e5eaf0;
+  border-radius: 12px;
+  background: #f9fafc;
+}
+
+.event-form-heading h4,
+.proposal-form-heading h3 {
+  margin: 4px 0;
+  color: #29394d;
+}
+
+.event-form-heading p,
+.proposal-form-heading p {
+  margin: 5px 0 0;
+  color: #788697;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.event-form-grid,
+.proposal-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.event-form-grid label,
+.proposal-form-grid label,
+.proposal-review-note {
+  display: grid;
+  gap: 6px;
+  color: #526174;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.event-form-grid input,
+.event-form-grid textarea,
+.proposal-form-grid input,
+.proposal-form-grid textarea,
+.proposal-form-grid select,
+.proposal-review-note textarea {
+  width: 100%;
+  min-height: 38px;
+  padding: 9px 10px;
+  border: 1px solid #dfe5ed;
+  border-radius: 8px;
+  color: #33445a;
+  background: #fff;
+  font: inherit;
+}
+
+.event-form-grid textarea,
+.proposal-form-grid textarea,
+.proposal-review-note textarea {
+  resize: vertical;
+}
+
+.event-description-field,
+.proposal-mission-field {
+  grid-column: 1 / -1;
+}
+
+.event-form-actions,
+.proposal-form-actions,
+.proposal-card-actions,
+.event-management-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 9px;
+}
+
+.event-form-actions .primary-button,
+.event-form-actions .outline-button,
+.proposal-form-actions .primary-button,
+.proposal-form-actions .outline-button,
+.proposal-card-actions .primary-button,
+.proposal-card-actions .outline-button {
+  min-height: 38px;
+  margin: 0;
+}
+
+.event-seat-count {
+  color: #526c91;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.event-cancelled-label {
+  display: inline-flex;
+  width: fit-content;
+  padding: 5px 8px;
+  border-radius: 99px;
+  color: #9a3434;
+  background: #fff0f0;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.event-management-actions {
+  margin-top: 4px;
+}
+
+.event-management-actions .outline-button {
+  min-height: 34px;
+  margin: 0;
+}
+
+.proposal-page {
+  display: grid;
+  gap: 22px;
+}
+
+.proposal-form-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+}
+
+.proposal-form-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.proposal-list-section,
+.proposal-list {
+  display: grid;
+  gap: 13px;
+}
+
+.proposal-card {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  border: 1px solid #e5eaf0;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.proposal-card > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.proposal-card > header > div {
+  display: grid;
+  gap: 4px;
+}
+
+.proposal-card h4,
+.proposal-card h3 {
+  margin: 0;
+  color: #29394d;
+  font-size: 15px;
+}
+
+.proposal-card > header span:not(.proposal-status) {
+  color: #788697;
+  font-size: 11px;
+}
+
+.proposal-card > p {
+  margin: 0;
+  color: #526174;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.proposal-card .proposal-mission {
+  color: #788697;
+}
+
+.proposal-status {
+  display: inline-flex;
+  width: fit-content;
+  padding: 6px 10px;
+  border-radius: 99px;
+  color: #617185;
+  background: #edf2f8;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: capitalize;
+}
+
+.proposal-status.status-submitted {
+  color: #805b0b;
+  background: #fff4d6;
+}
+
+.proposal-status.status-approved {
+  color: #20744d;
+  background: #e6f7ed;
+}
+
+.proposal-status.status-declined {
+  color: #9a3434;
+  background: #fff0f0;
+}
+
+.proposal-progress {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 3px 0;
+}
+
+.proposal-progress span {
+  padding-top: 8px;
+  border-top: 3px solid #e6ebf1;
+  color: #929eac;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.proposal-progress span.complete {
+  border-color: #3aab78;
+  color: #20744d;
+}
+
+.proposal-decision-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  color: #788697;
+  font-size: 11px;
+}
+
+.proposal-decision-details p {
+  flex: 1 0 100%;
+  margin: 4px 0 0;
+  padding: 11px 12px;
+  border-left: 3px solid #b9c9dc;
+  color: #526174;
+  background: #f6f8fb;
+}
+
+.proposal-decision-details .text-button {
+  flex: 1 0 100%;
+  text-align: left;
+}
+
+.admin-proposal-list .proposal-card {
+  gap: 14px;
+}
+
+.proposal-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  padding: 12px;
+  border-radius: 9px;
+  background: #f8fafc;
+}
+
+.proposal-meta-grid span {
+  display: grid;
+  gap: 4px;
+  color: #526174;
+  font-size: 11px;
+}
+
+.proposal-meta-grid strong {
+  color: #8490a0;
+  font-size: 9px;
+  text-transform: uppercase;
+}
+
+.proposal-review-note textarea {
+  min-height: 65px;
+}
+
+.admin-proposal-list .proposal-card-actions .approve-button,
+.admin-proposal-list .proposal-card-actions .decline-button {
+  min-height: 38px;
+  padding: 9px 13px;
+  border: 0;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.nav-count {
+  display: grid;
+  min-width: 20px;
+  height: 20px;
+  margin-left: auto;
+  place-items: center;
+  border-radius: 50%;
+  color: #fff;
+  background: #d97706;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.dues-reminder-panel {
+  display: grid;
+  gap: 16px;
+  margin: 0 0 22px;
+  padding: 22px;
+  border: 1px solid #f1d7ad;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #fffaf0, #fff);
+}
+
+.dues-reminder-heading,
+.dues-section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.dues-reminder-heading h2,
+.dues-section-heading h3,
+.dues-schedule-form h4,
+.dues-section-heading h4 {
+  margin: 4px 0;
+  color: #29394d;
+}
+
+.dues-reminder-heading p,
+.dues-section-heading p,
+.dues-schedule-form p {
+  margin: 5px 0 0;
+  color: #788697;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.dues-reminder-list,
+.dues-alert-list {
+  display: grid;
+  gap: 9px;
+}
+
+.dues-reminder-item,
+.dues-alert {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+  border: 1px solid #f2e5ce;
+  border-radius: 9px;
+  background: #fff;
+}
+
+.dues-reminder-item > div,
+.dues-alert > div {
+  display: grid;
+  gap: 4px;
+}
+
+.dues-reminder-item strong,
+.dues-alert strong {
+  color: #384b61;
+  font-size: 12px;
+}
+
+.dues-reminder-item span,
+.dues-alert span {
+  color: #788697;
+  font-size: 11px;
+}
+
+.dues-reminder-item.overdue,
+.dues-alert.overdue {
+  border-color: #efcaca;
+  background: #fff8f8;
+}
+
+.dues-page {
+  display: grid;
+  gap: 22px;
+}
+
+.dues-page-heading {
+  align-items: flex-end;
+}
+
+.dues-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.dues-filters label,
+.dues-organization-picker,
+.dues-schedule-form label {
+  display: grid;
+  gap: 6px;
+  color: #526174;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.dues-filters select,
+.dues-organization-picker select,
+.dues-schedule-form input,
+.dues-payment-form input {
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 1px solid #dfe5ed;
+  border-radius: 8px;
+  color: #33445a;
+  background: #fff;
+}
+
+.dues-alert-list {
+  padding: 14px;
+  border: 1px solid #f1d7ad;
+  border-radius: 12px;
+  background: #fffaf0;
+}
+
+.dues-alert {
+  justify-content: flex-start;
+  border-color: #f2e5ce;
+}
+
+.dues-alert > .icon {
+  flex: 0 0 21px;
+  color: #b7791f;
+}
+
+.dues-alert.overdue > .icon {
+  color: #b42318;
+}
+
+.dues-section {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.dues-section-heading {
+  align-items: center;
+}
+
+.dues-section-heading h3 {
+  font-size: 16px;
+}
+
+.dues-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid #e8edf2;
+  border-radius: 10px;
+}
+
+.dues-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.dues-table th,
+.dues-table td {
+  padding: 12px 13px;
+  border-bottom: 1px solid #edf0f4;
+  color: #526174;
+  font-size: 11px;
+}
+
+.dues-table th {
+  color: #6a788a;
+  background: #f8fafc;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.dues-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.dues-table td:first-child {
+  min-width: 155px;
+}
+
+.dues-table td:first-child strong,
+.dues-table td:first-child span {
+  display: block;
+}
+
+.dues-table td:first-child strong {
+  color: #34465b;
+  font-size: 12px;
+}
+
+.dues-table td:first-child span {
+  margin-top: 3px;
+  color: #8490a0;
+  font-size: 10px;
+}
+
+.dues-status {
+  display: inline-flex;
+  padding: 5px 9px;
+  border-radius: 99px;
+  color: #8a692c;
+  background: #f8f2e5;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: capitalize;
+}
+
+.dues-status.status-paid {
+  color: #20744d;
+  background: #e6f7ed;
+}
+
+.dues-status.status-partial {
+  color: #805b0b;
+  background: #fff4d6;
+}
+
+.dues-status.status-overdue {
+  color: #a42121;
+  background: #fff0f0;
+}
+
+.dues-status.status-pending {
+  color: #805b0b;
+  background: #fff4d6;
+}
+
+.dues-status.status-rejected {
+  color: #a42121;
+  background: #fff0f0;
+}
+
+.dues-organization-picker {
+  max-width: 420px;
+}
+
+.dues-schedule-form {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) repeat(3, minmax(130px, 0.65fr)) auto;
+  align-items: end;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid #e8edf2;
+  border-radius: 11px;
+  background: #f9fafc;
+}
+
+.dues-schedule-form > div:first-child {
+  align-self: center;
+}
+
+.dues-schedule-form h4,
+.dues-section-heading h4 {
+  font-size: 14px;
+}
+
+.dues-schedule-form .primary-button {
+  min-height: 38px;
+  margin: 0;
+  padding: 0 14px;
+  white-space: nowrap;
+}
+
+.dues-management-list {
+  display: grid;
+  gap: 14px;
+}
+
+.dues-year-card {
+  display: grid;
+  gap: 12px;
+  padding: 15px;
+  border: 1px solid #e8edf2;
+  border-radius: 11px;
+  background: #fff;
+}
+
+.dues-year-card > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+}
+
+.dues-year-card > header > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.dues-year-card h4 {
+  margin: 0;
+  color: #33445a;
+  font-size: 14px;
+}
+
+.dues-year-card > header span,
+.dues-year-summary span {
+  color: #788697;
+  font-size: 11px;
+}
+
+.dues-year-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.dues-year-summary strong {
+  color: #a34a15;
+  font-size: 11px;
+}
+
+.dues-payment-form {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dues-payment-form input {
+  width: 105px;
+  min-height: 33px;
+  padding: 6px 8px;
+}
+
+.dues-payment-form button {
+  min-height: 33px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 7px;
+  font-size: 10px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.dues-paid-note {
+  color: #20744d;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.payment-member-button {
+  display: block;
+  padding: 0;
+  border: 0;
+  color: #33445a;
+  background: transparent;
+  font: inherit;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.payment-member-button:hover {
+  color: #36578f;
+  text-decoration: underline;
+}
+
+.gcash-settings-form {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) repeat(2, minmax(180px, 1fr)) auto;
+  align-items: end;
+  gap: 12px;
+  padding: 18px;
+  border: 1px solid #e3eaf3;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.gcash-settings-form > div:first-child {
+  align-self: center;
+}
+
+.gcash-settings-form h4 {
+  margin: 5px 0;
+  color: #29394d;
+}
+
+.gcash-settings-form p,
+.member-payment-form label > span {
+  margin: 0;
+  color: #788697;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.gcash-settings-form label,
+.member-payment-form label {
+  display: grid;
+  gap: 6px;
+  color: #526174;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.gcash-settings-form input,
+.member-payment-form input {
+  min-height: 38px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #dfe5ed;
+  border-radius: 8px;
+  color: #33445a;
+  background: #fff;
+}
+
+.gcash-settings-form input[type="file"],
+.member-payment-form input[type="file"] {
+  min-height: 38px;
+  padding: 6px;
+  font-size: 10px;
+}
+
+.gcash-settings-form .primary-button {
+  min-height: 38px;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.gcash-current-qr {
+  grid-column: 2 / 4;
+  width: 110px;
+  height: 110px;
+  object-fit: contain;
+  border: 1px solid #e3eaf3;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.payment-review-hint {
+  display: block;
+  margin-top: 5px;
+  color: #9a6416;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.payment-rejection-note {
+  max-width: 220px;
+  color: #9a3434;
+}
+
+.payment-submit-button {
+  min-height: 33px;
+  width: auto;
+  padding: 7px 10px;
+  white-space: nowrap;
+}
+
+.gcash-payment-destination {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  padding: 18px;
+  margin: 16px 0;
+  border: 1px solid #e3eaf3;
+  border-radius: 10px;
+  background: #f8fafc;
+  text-align: center;
+}
+
+.gcash-payment-destination img {
+  width: min(220px, 100%);
+  max-height: 220px;
+  object-fit: contain;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.gcash-payment-destination > div {
+  display: grid;
+  gap: 4px;
+}
+
+.gcash-payment-destination > div span {
+  color: #788697;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.gcash-payment-destination > div strong {
+  color: #29394d;
+  font-size: 18px;
+}
+
+.gcash-payment-destination p {
+  margin: 0;
+  color: #788697;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.member-payment-form {
+  display: grid;
+  gap: 13px;
+}
+
+.member-dues-payment-actions {
+  display: grid;
+  justify-items: start;
+  gap: 7px;
+}
+
+.edit-payment-submission {
+  font-size: 11px;
+}
+
+.member-payment-form-actions,
+.payment-review-actions,
+.payment-history-action-links {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.member-payment-form-actions .outline-button,
+.member-payment-form-actions .primary-button {
+  width: auto;
+  min-height: 36px;
+  margin: 0;
+  padding: 8px 12px;
+}
+
+.payment-review-actions .approve-button,
+.payment-review-actions .decline-button,
+.payment-review-actions .outline-button {
+  width: auto;
+  min-height: 33px;
+  margin: 0;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 7px;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.payment-review-actions .outline-button {
+  border: 1px solid #dfe5ed;
+  color: #526174;
+  background: #fff;
+}
+
+.payment-review-actions .approve-button {
+  background: #3c8a6c;
+}
+
+.payment-review-actions .approve-button:hover:not(:disabled) {
+  background: #2e7458;
+}
+
+.payment-review-actions .decline-button {
+  background: #b65c5c;
+}
+
+.payment-review-actions .decline-button:hover:not(:disabled) {
+  background: #984848;
+}
+
+.payment-history-review-meta {
+  display: grid;
+  align-content: start;
+  justify-items: start;
+  gap: 8px;
+}
+
+.payment-proof-preview {
+  display: block;
+  width: min(100%, 300px);
+  max-height: 320px;
+  object-fit: contain;
+  border: 1px solid #e8edf2;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.payment-history-overlay {
+  position: fixed;
+  z-index: 21;
+  inset: 0;
+  display: grid;
+  overflow-y: auto;
+  place-items: center;
+  padding: 24px;
+  background: #17233599;
+}
+
+.payment-history-dialog {
+  width: min(100%, 680px);
+  max-height: min(760px, calc(100vh - 48px));
+  overflow-y: auto;
+  padding: 25px;
+  border: 1px solid #e8edf2;
+  border-radius: 15px;
+  background: #fff;
+  box-shadow: 0 22px 70px #15223840;
+}
+
+.payment-history-heading,
+.payment-history-item-heading,
+.payment-history-item-details {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.payment-history-heading {
+  padding-bottom: 18px;
+  border-bottom: 1px solid #edf0f4;
+}
+
+.payment-history-heading h2 {
+  margin: 4px 0;
+  color: #29394d;
+  font-size: 21px;
+}
+
+.payment-history-heading p,
+.payment-history-item span {
+  margin: 0;
+  color: #788697;
+  font-size: 11px;
+}
+
+.payment-history-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  padding: 18px 0;
+}
+
+.payment-history-summary > div {
+  display: grid;
+  gap: 6px;
+  padding: 13px;
+  border: 1px solid #e8edf2;
+  border-radius: 9px;
+  background: #f8fafc;
+}
+
+.payment-history-summary span,
+.payment-correction-form label {
+  color: #788697;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.payment-history-summary strong {
+  color: #29394d;
+  font-size: 15px;
+}
+
+.payment-history-summary > div:last-child strong {
+  color: #a34a15;
+}
+
+.payment-history-section .dues-section-heading {
+  margin-bottom: 12px;
+}
+
+.payment-history-list {
+  display: grid;
+  gap: 9px;
+}
+
+.payment-history-item {
+  padding: 13px;
+  border: 1px solid #e8edf2;
+  border-radius: 9px;
+}
+
+.payment-history-item-heading {
+  align-items: center;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #edf0f4;
+}
+
+.payment-history-item-heading > div {
+  display: grid;
+  gap: 3px;
+}
+
+.payment-history-item-heading strong {
+  color: #20744d;
+  font-size: 15px;
+}
+
+.payment-history-item-details {
+  align-items: center;
+  padding-top: 10px;
+}
+
+.payment-history-item-details > span {
+  color: #788697;
+  font-size: 11px;
+}
+
+.payment-correction-form {
+  display: grid;
+  justify-items: end;
+  gap: 9px;
+  width: min(100%, 310px);
+}
+
+.payment-correction-form label {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+}
+
+.payment-correction-form input {
+  min-height: 36px;
+  padding: 7px 9px;
+  border: 1px solid #dfe5ed;
+  border-radius: 7px;
+  color: #33445a;
+  background: #fff;
+}
+
+.payment-correction-form > div {
+  display: flex;
+  gap: 7px;
+}
+
+.payment-correction-form .outline-button,
+.payment-correction-form .primary-button {
+  width: auto;
+  min-height: 34px;
+  margin: 0;
+  padding: 7px 10px;
+  font-size: 10px;
+}
+
+.payment-receipt-overlay {
+  position: fixed;
+  z-index: 20;
+  inset: 0;
+  display: grid;
+  overflow-y: auto;
+  place-items: center;
+  padding: 24px;
+  background: #17233599;
+}
+
+.payment-receipt-dialog {
+  width: min(100%, 560px);
+  padding: 26px;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 22px 70px #15223840;
+}
+
+.receipt-brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid #edf0f4;
+}
+
+.receipt-brand > div:last-child {
+  display: grid;
+  gap: 3px;
+}
+
+.receipt-brand strong {
+  color: #29394d;
+  font-size: 14px;
+}
+
+.receipt-brand > div:last-child span {
+  color: #788697;
+  font-size: 10px;
+}
+
+.receipt-heading {
+  padding: 22px 0 15px;
+  text-align: center;
+}
+
+.receipt-heading h2 {
+  margin: 5px 0;
+  color: #29394d;
+}
+
+.receipt-heading p,
+.receipt-thank-you {
+  margin: 0;
+  color: #788697;
+  font-size: 12px;
+}
+
+.receipt-number,
+.receipt-details > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid #edf0f4;
+  font-size: 12px;
+}
+
+.receipt-number span,
+.receipt-details dt {
+  color: #788697;
+}
+
+.receipt-number strong,
+.receipt-details dd {
+  margin: 0;
+  color: #33445a;
+  font-weight: 700;
+  text-align: right;
+}
+
+.receipt-details {
+  margin: 8px 0;
+}
+
+.receipt-details .receipt-amount {
+  color: #20744d;
+  font-size: 15px;
+}
+
+.receipt-thank-you {
+  padding: 12px 0 4px;
+  text-align: center;
+}
+
+.receipt-screen-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 9px;
+  margin-top: 18px;
+}
+
+.receipt-screen-actions .primary-button,
+.receipt-screen-actions .outline-button {
+  min-height: 38px;
+  margin: 0;
+}
+
+@media print {
+  @page {
+    margin: 14mm;
+  }
+
+  body * {
+    visibility: hidden !important;
+  }
+
+  .payment-receipt-overlay,
+  .payment-receipt-overlay * {
+    visibility: visible !important;
+  }
+
+  .payment-receipt-overlay {
+    position: absolute;
+    inset: 0;
+    display: block;
+    padding: 0;
+    background: #fff;
+  }
+
+  .payment-receipt-dialog {
+    width: 100%;
+    padding: 0;
+    box-shadow: none;
+  }
+
+  .receipt-screen-actions {
+    display: none;
+  }
 }
 
 @media (max-width: 680px) {
@@ -2276,6 +3471,98 @@ footer {
 
   .member-row-spacer {
     display: none;
+  }
+
+  .dues-page-heading,
+  .dues-reminder-heading,
+  .dues-section-heading,
+  .event-management-form .event-form-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .dues-filters {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .dues-reminder-item,
+  .dues-year-card > header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .dues-schedule-form {
+    grid-template-columns: 1fr;
+  }
+
+  .gcash-settings-form {
+    grid-template-columns: 1fr;
+  }
+
+  .gcash-current-qr {
+    grid-column: auto;
+  }
+
+  .event-form-grid,
+  .proposal-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .event-description-field,
+  .proposal-mission-field {
+    grid-column: auto;
+  }
+
+  .dues-year-summary {
+    flex-wrap: wrap;
+  }
+
+  .payment-history-overlay {
+    place-items: start center;
+    padding: 12px;
+  }
+
+  .payment-history-dialog {
+    max-height: calc(100vh - 24px);
+    padding: 18px;
+  }
+
+  .payment-history-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .payment-history-item-heading,
+  .payment-history-item-details {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .payment-correction-form {
+    justify-items: stretch;
+    width: 100%;
+  }
+
+  .member-payment-form-actions,
+  .payment-review-actions {
+    justify-content: stretch;
+  }
+
+  .member-payment-form-actions > button,
+  .payment-review-actions > button {
+    flex: 1;
+  }
+
+  .payment-receipt-overlay {
+    padding: 12px;
+  }
+
+  .payment-receipt-dialog {
+    padding: 18px;
+  }
+
+  .proposal-meta-grid {
+    grid-template-columns: 1fr 1fr;
   }
 }
 

@@ -118,6 +118,156 @@ class OrganizationEventTest extends TestCase
             ->assertConflict();
     }
 
+    public function test_president_can_create_and_edit_future_events_with_seat_limits(): void
+    {
+        $president = User::factory()->create();
+        $officer = User::factory()->create();
+        $member = User::factory()->create();
+        $organization = $this->organization();
+        $event = $this->event($organization, now()->addWeek());
+        $this->membership($organization, $president, 'President');
+        $this->membership($organization, $officer, 'Treasurer');
+        $this->membership($organization, $member);
+
+        $newEvent = [
+            'title' => 'Campus Design Meetup',
+            'description' => 'A student design session.',
+            'location' => 'Innovation Hall',
+            'starts_at' => now()->addWeeks(2)->format('Y-m-d\TH:i'),
+            'seat_limit' => 3,
+        ];
+
+        Sanctum::actingAs($officer);
+        $this->postJson("/api/organizations/{$organization->id}/events", $newEvent)
+            ->assertForbidden();
+
+        Sanctum::actingAs($president);
+        $createdId = $this->postJson("/api/organizations/{$organization->id}/events", $newEvent)
+            ->assertCreated()
+            ->assertJsonPath('data.title', 'Campus Design Meetup')
+            ->assertJsonPath('data.location', 'Innovation Hall')
+            ->assertJsonPath('data.seat_limit', 3)
+            ->json('data.id');
+
+        $this->patchJson("/api/organizations/{$organization->id}/events/{$createdId}", [
+            ...$newEvent,
+            'title' => 'Updated Design Meetup',
+            'seat_limit' => 2,
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.title', 'Updated Design Meetup')
+            ->assertJsonPath('data.seat_limit', 2);
+
+        $this->patchJson("/api/organizations/{$organization->id}/events/{$event->id}", [
+            'title' => '',
+            'description' => '',
+            'location' => '',
+            'starts_at' => now()->addWeek()->format('Y-m-d\TH:i'),
+            'seat_limit' => 0,
+        ])->assertUnprocessable();
+    }
+
+    public function test_seat_limit_blocks_additional_rsvps_and_cannot_drop_below_existing_rsvps(): void
+    {
+        $president = User::factory()->create();
+        $firstMember = User::factory()->create();
+        $secondMember = User::factory()->create();
+        $thirdMember = User::factory()->create();
+        $organization = $this->organization();
+        $event = $this->event($organization, now()->addWeek());
+        $this->membership($organization, $president, 'President');
+        $this->membership($organization, $firstMember);
+        $this->membership($organization, $secondMember);
+        $this->membership($organization, $thirdMember);
+        $event->update(['seat_limit' => 2]);
+
+        Sanctum::actingAs($firstMember);
+        $this->postJson("/api/organizations/{$organization->id}/events/{$event->id}/rsvp")->assertOk();
+        $this->postJson("/api/organizations/{$organization->id}/events/{$event->id}/rsvp")->assertOk();
+
+        Sanctum::actingAs($secondMember);
+        $this->postJson("/api/organizations/{$organization->id}/events/{$event->id}/rsvp")->assertOk();
+
+        Sanctum::actingAs($thirdMember);
+        $this->postJson("/api/organizations/{$organization->id}/events/{$event->id}/rsvp")
+            ->assertConflict();
+
+        Sanctum::actingAs($president);
+        $this->patchJson("/api/organizations/{$organization->id}/events/{$event->id}", [
+            'title' => $event->title,
+            'description' => $event->description,
+            'location' => 'Campus Hall',
+            'starts_at' => now()->addWeek()->format('Y-m-d\TH:i'),
+            'seat_limit' => 1,
+        ])->assertConflict();
+        $this->patchJson("/api/organizations/{$organization->id}/events/{$event->id}", [
+            'title' => $event->title,
+            'description' => $event->description,
+            'location' => 'Campus Hall',
+            'starts_at' => now()->addWeek()->format('Y-m-d\TH:i'),
+            'seat_limit' => 2,
+        ])->assertOk();
+    }
+
+    public function test_cancelled_event_preserves_history_and_rejects_new_rsvps(): void
+    {
+        $president = User::factory()->create();
+        $member = User::factory()->create();
+        $organization = $this->organization();
+        $event = $this->event($organization, now()->addWeek());
+        $this->membership($organization, $president, 'President');
+        $this->membership($organization, $member);
+
+        Sanctum::actingAs($member);
+        $this->postJson("/api/organizations/{$organization->id}/events/{$event->id}/rsvp")->assertOk();
+
+        Sanctum::actingAs($president);
+        $this->patchJson("/api/organizations/{$organization->id}/events/{$event->id}/cancel")
+            ->assertOk()
+            ->assertJsonPath('data.is_cancelled', true)
+            ->assertJsonPath('data.rsvp_count', 1);
+
+        $this->assertDatabaseHas('organization_event_attendances', [
+            'organization_event_id' => $event->id,
+            'user_id' => $member->id,
+        ]);
+        $this->assertNotNull($event->fresh()->cancelled_at);
+        $this->patchJson("/api/organizations/{$organization->id}/events/{$event->id}/cancel")
+            ->assertConflict();
+
+        Sanctum::actingAs($member);
+        $this->postJson("/api/organizations/{$organization->id}/events/{$event->id}/rsvp")
+            ->assertConflict();
+        $this->getJson("/api/organizations/{$organization->id}")
+            ->assertOk()
+            ->assertJsonPath('data.events.0.is_cancelled', true);
+    }
+
+    public function test_president_cannot_edit_or_cancel_another_organizations_event(): void
+    {
+        $president = User::factory()->create();
+        $organization = $this->organization();
+        $otherOrganization = $this->organization(['name' => 'Another Organization']);
+        $event = $this->event($otherOrganization, now()->addWeek());
+        $this->membership($organization, $president, 'President');
+
+        Sanctum::actingAs($president);
+        $this->patchJson("/api/organizations/{$organization->id}/events/{$event->id}", [
+            'title' => 'Changed event',
+            'location' => 'Campus Hall',
+            'starts_at' => now()->addWeek()->format('Y-m-d\TH:i'),
+            'seat_limit' => 10,
+        ])->assertNotFound();
+        $this->patchJson("/api/organizations/{$organization->id}/events/{$event->id}/cancel")
+            ->assertNotFound();
+
+        $this->assertDatabaseHas('organization_events', [
+            'id' => $event->id,
+            'organization_id' => $otherOrganization->id,
+            'cancelled_at' => null,
+        ]);
+    }
+
     public function test_officers_can_mark_member_attendance_and_counts_are_visible(): void
     {
         $officer = User::factory()->create();

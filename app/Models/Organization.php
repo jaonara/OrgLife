@@ -15,6 +15,8 @@ class Organization extends Model
         'mission',
         'open_membership',
         'color',
+        'gcash_number',
+        'gcash_qr_path',
     ];
 
     protected function casts(): array
@@ -42,5 +44,10 @@ class Organization extends Model
     public function requests(): HasMany
     {
         return $this->hasMany(MembershipRequest::class);
+    }
+
+    public function dues(): HasMany
+    {
+        return $this->hasMany(OrganizationDue::class);
     }
 }

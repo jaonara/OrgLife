@@ -64,39 +64,64 @@ class OrganizationManagementAndAnnouncementsTest extends TestCase
         $this->assertDatabaseHas('organization_members', ['id' => $memberMembership->id]);
     }
 
-    public function test_only_the_president_can_promote_a_regular_member(): void
+    public function test_only_the_president_can_assign_roles_to_members_and_officers(): void
     {
         $officer = User::factory()->create();
         $president = User::factory()->create();
         $member = User::factory()->create();
         $organization = $this->organization();
-        $this->membership($organization, $officer, 'Officer');
-        $this->membership($organization, $president, 'President');
+        $officerMembership = $this->membership($organization, $officer, 'Officer');
+        $presidentMembership = $this->membership($organization, $president, 'President');
         $memberMembership = $this->membership($organization, $member);
 
         Sanctum::actingAs($member);
-        $this->patchJson("/api/officer/organizations/{$organization->id}/members/{$memberMembership->id}")
+        $this->patchJson("/api/officer/organizations/{$organization->id}/members/{$memberMembership->id}", ['role' => 'Secretary'])
             ->assertForbidden();
 
         Sanctum::actingAs($officer);
-        $this->patchJson("/api/officer/organizations/{$organization->id}/members/{$memberMembership->id}")
+        $this->patchJson("/api/officer/organizations/{$organization->id}/members/{$memberMembership->id}", ['role' => 'Secretary'])
             ->assertForbidden();
 
         Sanctum::actingAs($president);
-        $this->patchJson("/api/officer/organizations/{$organization->id}/members/{$memberMembership->id}")
+        $this->patchJson("/api/officer/organizations/{$organization->id}/members/{$memberMembership->id}", ['role' => 'Secretary'])
             ->assertOk()
-            ->assertJsonPath('data.role', 'Officer')
+            ->assertJsonPath('data.role', 'Secretary')
             ->assertJsonPath('data.user_id', $member->id);
 
         $this->assertDatabaseHas('organization_members', [
             'id' => $memberMembership->id,
-            'role' => 'Officer',
+            'role' => 'Secretary',
+        ]);
+
+        $this->patchJson("/api/officer/organizations/{$organization->id}/members/{$officerMembership->id}", ['role' => 'Auditor'])
+            ->assertOk()
+            ->assertJsonPath('data.role', 'Auditor');
+        $this->assertDatabaseHas('organization_members', [
+            'id' => $officerMembership->id,
+            'role' => 'Auditor',
         ]);
         $this->assertDatabaseHas('organization_members', [
             'organization_id' => $organization->id,
-            'user_id' => $officer->id,
-            'role' => 'Officer',
+            'id' => $presidentMembership->id,
+            'role' => 'President',
         ]);
+    }
+
+    public function test_role_assignment_rejects_invalid_roles_and_protects_the_president(): void
+    {
+        $president = User::factory()->create();
+        $member = User::factory()->create();
+        $organization = $this->organization();
+        $presidentMembership = $this->membership($organization, $president, 'President');
+        $memberMembership = $this->membership($organization, $member);
+
+        Sanctum::actingAs($president);
+        $this->patchJson("/api/officer/organizations/{$organization->id}/members/{$memberMembership->id}", ['role' => 'President'])
+            ->assertUnprocessable();
+        $this->patchJson("/api/officer/organizations/{$organization->id}/members/{$memberMembership->id}", ['role' => 'Member'])
+            ->assertUnprocessable();
+        $this->patchJson("/api/officer/organizations/{$organization->id}/members/{$presidentMembership->id}", ['role' => 'Auditor'])
+            ->assertConflict();
     }
 
     public function test_vice_president_and_treasurer_cannot_use_president_tools(): void

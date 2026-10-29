@@ -48,6 +48,11 @@ class User extends Authenticatable
         return $this->hasMany(MembershipRequest::class);
     }
 
+    public function organizationProposals(): HasMany
+    {
+        return $this->hasMany(OrganizationProposal::class);
+    }
+
     public function getProfilePictureUrlAttribute(): ?string
     {
         return $this->profile_picture_path
