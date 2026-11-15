@@ -2819,8 +2819,20 @@ footer {
   min-height: 65px;
 }
 
+.organization-report-card .proposal-decision-details {
+  display: grid;
+  justify-items: start;
+  gap: 12px;
+}
+
+.organization-report-card .proposal-decision-details p {
+  width: 100%;
+}
+
 .admin-proposal-list .proposal-card-actions .approve-button,
-.admin-proposal-list .proposal-card-actions .decline-button {
+.admin-proposal-list .proposal-card-actions .decline-button,
+.organization-report-card .proposal-card-actions .approve-button,
+.organization-report-card .proposal-card-actions .decline-button {
   min-height: 38px;
   padding: 9px 13px;
   border: 0;
