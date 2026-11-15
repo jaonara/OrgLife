@@ -33,6 +33,7 @@ class OrganizationController extends Controller
     public function index(Request $request)
     {
         $organizations = Organization::query()
+            ->whereNull('archived_at')
             ->withCount('members')
             ->when($request->filled('q'), function (Builder $query) use ($request) {
                 $term = '%'.$request->string('q')->trim().'%';
@@ -73,6 +74,9 @@ class OrganizationController extends Controller
                     'attendances as rsvp_count' => fn ($query) => $query->whereNotNull('rsvp_at'),
                     'attendances as attendance_count' => fn ($query) => $query->whereNotNull('attended_at'),
                 ])
+                ->with(['rsvps' => fn ($query) => $membership
+                    ? $query->with('user:id,name')
+                    : $query->whereRaw('1 = 0')])
                 ->with(['attendances' => fn ($query) => $membership
                     ? $query->where('user_id', $membership->user_id)
                     : $query->whereRaw('1 = 0')]),
@@ -104,6 +108,20 @@ class OrganizationController extends Controller
                 'membership_role' => $membership?->role,
                 'request_status' => $membershipRequest?->status,
             ],
+        ]);
+    }
+
+    public function archive(Request $request, Organization $organization)
+    {
+        $this->authorizePresident($request, $organization);
+
+        $organization->forceFill([
+            'archived_at' => now(),
+            'open_membership' => false,
+        ])->save();
+
+        return response()->json([
+            'message' => 'Organization archived. Its history has been retained.',
         ]);
     }
 
@@ -167,7 +185,7 @@ class OrganizationController extends Controller
     {
         if ($request->user()->is_admin) {
             return response()->json([
-                'data' => Organization::query()->orderBy('name')->get()
+                'data' => Organization::query()->whereNull('archived_at')->orderBy('name')->get()
                     ->map(fn (Organization $organization) => [
                         'id' => $organization->id,
                         'name' => $organization->name,
@@ -182,6 +200,7 @@ class OrganizationController extends Controller
 
         return response()->json([
             'data' => $request->user()->organizationMemberships()
+                ->whereHas('organization', fn (Builder $query) => $query->whereNull('archived_at'))
                 ->with('organization')
                 ->orderBy('role')
                 ->get()
@@ -195,11 +214,74 @@ class OrganizationController extends Controller
         ]);
     }
 
+    public function myArchivedOrganizations(Request $request)
+    {
+        $organizations = Organization::query()
+            ->whereNotNull('archived_at')
+            ->when(! $request->user()->is_admin, fn (Builder $query) => $query->whereHas(
+                'members',
+                fn (Builder $members) => $members
+                    ->where('user_id', $request->user()->id)
+                    ->where('role', 'President'),
+            ))
+            ->withCount(['members', 'events', 'announcements', 'dues'])
+            ->orderByDesc('archived_at')
+            ->get()
+            ->map(fn (Organization $organization) => [
+                'id' => $organization->id,
+                'name' => $organization->name,
+                'category' => $organization->category,
+                'college' => $organization->college,
+                'cause' => $organization->cause,
+                'mission' => $organization->mission,
+                'role' => $request->user()->is_admin ? 'Admin' : 'President',
+                'members' => $organization->members_count,
+                'events' => $organization->events_count,
+                'announcements' => $organization->announcements_count,
+                'dues_schedules' => $organization->dues_count,
+                'archived_at' => $organization->archived_at,
+            ]);
+
+        return response()->json(['data' => $organizations]);
+    }
+
+    public function myOrganizationMembers(Request $request)
+    {
+        $organizationIds = $request->user()->is_admin
+            ? Organization::query()->whereNull('archived_at')->select('id')
+            : $request->user()->organizationMemberships()
+                ->whereHas('organization', fn (Builder $query) => $query->whereNull('archived_at'))
+                ->select('organization_id');
+
+        return response()->json([
+            'data' => OrganizationMember::query()
+                ->whereIn('organization_id', $organizationIds)
+                ->with(['user:id,name,email,course,profile_picture_path', 'organization:id,name,college'])
+                ->orderBy('joined_at')
+                ->get()
+                ->map(fn (OrganizationMember $membership) => [
+                    'user_id' => $membership->user_id,
+                    'name' => $membership->user->name,
+                    'email' => $membership->user->email,
+                    'course' => $membership->user->course,
+                    'profile_picture_url' => $membership->user->profile_picture_url,
+                    'role' => $membership->role,
+                    'organization' => [
+                        'id' => $membership->organization->id,
+                        'name' => $membership->organization->name,
+                        'college' => $membership->organization->college,
+                    ],
+                ]),
+        ]);
+    }
+
     public function officerRequests(Request $request)
     {
         $organizationIds = $request->user()->is_admin
-            ? Organization::query()->select('id')
-            : $request->user()->organizationMemberships()->where('role', 'President')->select('organization_id');
+            ? Organization::query()->whereNull('archived_at')->select('id')
+            : $request->user()->organizationMemberships()->where('role', 'President')
+                ->whereHas('organization', fn (Builder $query) => $query->whereNull('archived_at'))
+                ->select('organization_id');
 
         $requests = MembershipRequest::query()
             ->whereIn('organization_id', $organizationIds)
@@ -214,6 +296,10 @@ class OrganizationController extends Controller
 
     public function decideRequest(Request $request, MembershipRequest $membershipRequest)
     {
+        abort_if(
+            $membershipRequest->organization()->whereNotNull('archived_at')->exists(),
+            404,
+        );
         abort_unless($request->user()->is_admin || $request->user()->organizationMemberships()
             ->where('organization_id', $membershipRequest->organization_id)
             ->where('role', 'President')
@@ -261,7 +347,7 @@ class OrganizationController extends Controller
 
         return response()->json([
             'data' => $organization->members()
-                ->with('user:id,name,email,profile_picture_path')
+                ->with('user:id,name,email,course,profile_picture_path')
                 ->orderByRaw("CASE role WHEN 'President' THEN 0 WHEN 'Vice President' THEN 1 WHEN 'Treasurer' THEN 2 WHEN 'Secretary' THEN 3 WHEN 'P.I.O' THEN 4 WHEN 'Auditor' THEN 5 WHEN 'Officer' THEN 6 ELSE 7 END")
                 ->orderBy('joined_at')
                 ->get()
@@ -270,6 +356,7 @@ class OrganizationController extends Controller
                     'user_id' => $membership->user_id,
                     'name' => $membership->user->name,
                     'email' => $membership->user->email,
+                    'course' => $membership->user->course,
                     'profile_picture_url' => $membership->user->profile_picture_url,
                     'role' => $membership->role,
                     'joined_at' => $membership->joined_at,
@@ -320,8 +407,10 @@ class OrganizationController extends Controller
     public function announcements(Request $request)
     {
         $organizationIds = $request->user()->is_admin
-            ? Organization::query()->select('id')
-            : $request->user()->organizationMemberships()->select('organization_id');
+            ? Organization::query()->whereNull('archived_at')->select('id')
+            : $request->user()->organizationMemberships()
+                ->whereHas('organization', fn (Builder $query) => $query->whereNull('archived_at'))
+                ->select('organization_id');
 
         return response()->json([
             'data' => OrganizationAnnouncement::query()
@@ -366,8 +455,10 @@ class OrganizationController extends Controller
     public function myEvents(Request $request)
     {
         $organizationIds = $request->user()->is_admin
-            ? Organization::query()->select('id')
-            : $request->user()->organizationMemberships()->select('organization_id');
+            ? Organization::query()->whereNull('archived_at')->select('id')
+            : $request->user()->organizationMemberships()
+                ->whereHas('organization', fn (Builder $query) => $query->whereNull('archived_at'))
+                ->select('organization_id');
 
         return response()->json([
             'data' => OrganizationEvent::query()
@@ -378,6 +469,7 @@ class OrganizationController extends Controller
                     'attendances as attendance_count' => fn ($query) => $query->whereNotNull('attended_at'),
                 ])
                 ->with(['attendances' => fn ($query) => $query->where('user_id', $request->user()->id)])
+                ->with(['rsvps.user:id,name'])
                 ->orderBy('starts_at')
                 ->get()
                 ->map(fn (OrganizationEvent $event) => $this->eventData($event)),
@@ -538,6 +630,7 @@ class OrganizationController extends Controller
                     'attendances as rsvp_count' => fn ($query) => $query->whereNotNull('rsvp_at'),
                     'attendances as attendance_count' => fn ($query) => $query->whereNotNull('attended_at'),
                 ])
+                ->with(['rsvps.user:id,name'])
                 ->orderBy('starts_at')
                 ->get()
                 ->map(fn (OrganizationEvent $event) => $this->eventData($event)),
@@ -547,6 +640,7 @@ class OrganizationController extends Controller
     public function eventAttendance(Request $request, OrganizationEvent $event)
     {
         $organization = $event->organization;
+        abort_if($organization->archived_at, 404);
         $this->authorizePresident($request, $organization);
 
         $members = $organization->members()->with('user:id,name,email,profile_picture_path')->get();
@@ -571,6 +665,7 @@ class OrganizationController extends Controller
     public function markEventAttendance(Request $request, OrganizationEvent $event, User $user)
     {
         $organization = $event->organization;
+        abort_if($organization->archived_at, 404);
         $this->authorizePresident($request, $organization);
         abort_if($event->cancelled_at, 409, 'Attendance cannot be recorded for a cancelled event.');
         abort_unless(
@@ -612,6 +707,12 @@ class OrganizationController extends Controller
             'is_past' => $event->starts_at->isPast(),
             'rsvp_count' => (int) ($event->rsvp_count ?? 0),
             'attendance_count' => (int) ($event->attendance_count ?? 0),
+            'going_members' => $event->relationLoaded('rsvps')
+                ? $event->rsvps->map(fn (OrganizationEventAttendance $rsvp) => [
+                    'user_id' => $rsvp->user_id,
+                    'name' => $rsvp->user->name,
+                ])->values()
+                : [],
             'rsvped' => $event->relationLoaded('attendances')
                 && $event->attendances->first()?->rsvp_at !== null,
             'organization' => $event->relationLoaded('organization') && $event->organization ? [

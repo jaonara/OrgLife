@@ -207,6 +207,49 @@ class OrganizationFeatureTest extends TestCase
             ->assertForbidden();
     }
 
+    public function test_member_can_search_members_across_their_organizations(): void
+    {
+        $member = User::factory()->create();
+        $peer = User::factory()->create(['name' => 'Alex Rivera']);
+        $firstOrganization = $this->organization(['name' => 'Computer Society']);
+        $secondOrganization = $this->organization(['name' => 'Arts Club']);
+        OrganizationMember::create([
+            'organization_id' => $firstOrganization->id,
+            'user_id' => $member->id,
+            'role' => 'Member',
+        ]);
+        OrganizationMember::create([
+            'organization_id' => $firstOrganization->id,
+            'user_id' => $peer->id,
+            'role' => 'Member',
+        ]);
+        OrganizationMember::create([
+            'organization_id' => $secondOrganization->id,
+            'user_id' => $member->id,
+            'role' => 'Member',
+        ]);
+        OrganizationMember::create([
+            'organization_id' => $secondOrganization->id,
+            'user_id' => $peer->id,
+            'role' => 'Treasurer',
+        ]);
+
+        Sanctum::actingAs($member);
+        $this->getJson('/api/my-organization-members')
+            ->assertOk()
+            ->assertJsonCount(4, 'data')
+            ->assertJsonFragment(['name' => 'Alex Rivera', 'organization' => [
+                'id' => $firstOrganization->id,
+                'name' => 'Computer Society',
+                'college' => 'CCS',
+            ]])
+            ->assertJsonFragment(['name' => 'Alex Rivera', 'organization' => [
+                'id' => $secondOrganization->id,
+                'name' => 'Arts Club',
+                'college' => 'CCS',
+            ]]);
+    }
+
     private function organization(array $overrides = []): Organization
     {
         return Organization::create(array_merge([

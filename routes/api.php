@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\DuesController;
 use App\Http\Controllers\Api\OrganizationController;
 use App\Http\Controllers\Api\OrganizationProposalController;
+use App\Http\Controllers\Api\OrganizationReportController;
 use App\Http\Controllers\Api\UserController;
 use Illuminate\Support\Facades\Route;
 
@@ -24,6 +25,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::patch('/users/{user}', [UserController::class, 'update']);
 
     Route::get('/organizations', [OrganizationController::class, 'index']);
+    Route::get('/my-archived-organizations', [OrganizationController::class, 'myArchivedOrganizations']);
+    Route::delete('/organizations/{organization}', [OrganizationController::class, 'archive']);
     Route::get('/my-organization-proposals', [OrganizationProposalController::class, 'mine']);
     Route::post('/organization-proposals', [OrganizationProposalController::class, 'createDraft']);
     Route::put('/organization-proposals/{proposal}', [OrganizationProposalController::class, 'updateDraft']);
@@ -64,4 +67,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/organizations/{organization}/membership-requests', [OrganizationController::class, 'requestToJoin']);
     Route::delete('/organizations/{organization}/membership-requests', [OrganizationController::class, 'withdraw']);
     Route::get('/organizations/{organization}/members', [OrganizationController::class, 'members']);
+    Route::get('/my-organization-members', [OrganizationController::class, 'myOrganizationMembers']);
+    Route::post('/organizations/{organization}/reports', [OrganizationReportController::class, 'store']);
+    Route::get('/admin/organization-reports', [OrganizationReportController::class, 'index']);
+    Route::patch('/admin/organization-reports/{report}', [OrganizationReportController::class, 'update']);
 });

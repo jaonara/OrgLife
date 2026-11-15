@@ -36,4 +36,11 @@ class OrganizationEvent extends Model
     {
         return $this->hasMany(OrganizationEventAttendance::class);
     }
+
+    public function rsvps(): HasMany
+    {
+        return $this->hasMany(OrganizationEventAttendance::class)
+            ->whereNotNull('rsvp_at')
+            ->orderBy('rsvp_at');
+    }
 }

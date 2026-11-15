@@ -18,14 +18,18 @@ class DuesController extends Controller
     {
         $user = $request->user();
         abort_unless(
-            $user->is_admin || $user->organizationMemberships()->whereIn('role', ['President', 'Treasurer'])->exists(),
+            $user->is_admin || $user->organizationMemberships()
+                ->whereIn('role', ['President', 'Treasurer'])
+                ->whereHas('organization', fn ($query) => $query->whereNull('archived_at'))
+                ->exists(),
             403,
             'Only dues managers can view pending payment submissions.',
         );
         $organizationIds = $user->is_admin
-            ? Organization::query()->select('id')
+            ? Organization::query()->whereNull('archived_at')->select('id')
             : $user->organizationMemberships()
                 ->whereIn('role', ['President', 'Treasurer'])
+                ->whereHas('organization', fn ($query) => $query->whereNull('archived_at'))
                 ->select('organization_id');
 
         return response()->json([
@@ -425,7 +429,12 @@ class DuesController extends Controller
                 ->first();
 
             if ($due) {
-                $paidCents = $this->toCents($due->payments()->where('status', 'approved')->sum('amount'));
+                $paidCents = $due->payments()
+                    ->where('status', 'approved')
+                    ->selectRaw('SUM(amount) as total_paid')
+                    ->groupBy('user_id')
+                    ->get()
+                    ->max(fn ($payments) => $this->toCents($payments->total_paid)) ?? 0;
                 abort_if(
                     $this->toCents($validated['amount']) < $paidCents,
                     409,

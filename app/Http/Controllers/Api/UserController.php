@@ -67,6 +67,7 @@ class UserController extends Controller
         $user = $request->user();
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
+            'course' => ['nullable', 'string', 'max:150'],
             'profile_picture' => ['sometimes', 'nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120', 'dimensions:max_width=2048,max_height=2048'],
         ]);
 
@@ -79,6 +80,9 @@ class UserController extends Controller
 
         $oldPath = $user->profile_picture_path;
         $user->name = $validated['name'];
+        if (array_key_exists('course', $validated)) {
+            $user->course = $validated['course'];
+        }
         if (isset($newPath)) {
             $user->profile_picture_path = $newPath;
         }

@@ -103,16 +103,21 @@ function errorMessage(error) {
 
 function App() {
   const handleLogoutRef = useRef(handleLogout)
+  const profileMenuRef = useRef(null)
+  const notificationPanelRef = useRef(null)
+  const requestStatusesRef = useRef(null)
   const [user, setUser] = useState(readSavedUser)
   const [activePage, setActivePage] = useState('Discover')
   const [organizations, setOrganizations] = useState([])
   const [colleges, setColleges] = useState([])
   const [requests, setRequests] = useState([])
   const [myOrganizations, setMyOrganizations] = useState([])
+  const [archivedOrganizations, setArchivedOrganizations] = useState([])
   const [officerRequests, setOfficerRequests] = useState([])
   const [pendingJoinRequestCount, setPendingJoinRequestCount] = useState(0)
   const [pendingProposalCount, setPendingProposalCount] = useState(0)
   const [pendingPaymentCount, setPendingPaymentCount] = useState(0)
+  const [pendingOrganizationReportCount, setPendingOrganizationReportCount] = useState(0)
   const [officerMembers, setOfficerMembers] = useState([])
   const [officerEvents, setOfficerEvents] = useState([])
   const [eventAttendance, setEventAttendance] = useState([])
@@ -145,6 +150,7 @@ function App() {
   const [paymentProofPreviewId, setPaymentProofPreviewId] = useState(null)
   const [myProposals, setMyProposals] = useState([])
   const [adminProposals, setAdminProposals] = useState([])
+  const [adminOrganizationReports, setAdminOrganizationReports] = useState([])
   const [draftProposalId, setDraftProposalId] = useState(null)
   const [proposalForm, setProposalForm] = useState({
     name: '',
@@ -165,16 +171,23 @@ function App() {
   const [announcementTitle, setAnnouncementTitle] = useState('')
   const [announcementBody, setAnnouncementBody] = useState('')
   const [profileName, setProfileName] = useState(() => user?.name || '')
+  const [profileCourse, setProfileCourse] = useState(() => user?.course || '')
   const [profilePictureFile, setProfilePictureFile] = useState(null)
   const [profilePicturePreview, setProfilePicturePreview] = useState('')
   const [selectedOrganization, setSelectedOrganization] = useState(null)
   const [members, setMembers] = useState([])
+  const [myOrganizationMembers, setMyOrganizationMembers] = useState([])
+  const [myMemberSearch, setMyMemberSearch] = useState('')
+  const [selectedSearchMember, setSelectedSearchMember] = useState(null)
   const [search, setSearch] = useState('')
   const [college, setCollege] = useState('All Colleges')
   const [type, setType] = useState('All Types')
   const [openOnly, setOpenOnly] = useState(false)
   const [officerOrganizationId, setOfficerOrganizationId] = useState('all')
   const [loading, setLoading] = useState(false)
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false)
+  const [notificationPanelOpen, setNotificationPanelOpen] = useState(false)
+  const [decisionNotifications, setDecisionNotifications] = useState([])
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
 
@@ -186,6 +199,53 @@ function App() {
     if (paymentProofPreview) URL.revokeObjectURL(paymentProofPreview)
   }, [paymentProofPreview])
 
+  useEffect(() => {
+    if (!selectedSearchMember) return undefined
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') setSelectedSearchMember(null)
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [selectedSearchMember])
+
+  useEffect(() => {
+    if (!profileMenuOpen) return undefined
+
+    const closeOnOutsideClick = (event) => {
+      if (!profileMenuRef.current?.contains(event.target)) setProfileMenuOpen(false)
+    }
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') setProfileMenuOpen(false)
+    }
+
+    document.addEventListener('pointerdown', closeOnOutsideClick)
+    window.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsideClick)
+      window.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [profileMenuOpen])
+
+  useEffect(() => {
+    if (!notificationPanelOpen) return undefined
+
+    const closeOnOutsideClick = (event) => {
+      if (!notificationPanelRef.current?.contains(event.target)) setNotificationPanelOpen(false)
+    }
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') setNotificationPanelOpen(false)
+    }
+
+    document.addEventListener('pointerdown', closeOnOutsideClick)
+    window.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsideClick)
+      window.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [notificationPanelOpen])
+
   async function loadOrganizations() {
     const response = await api.get('/organizations')
     setOrganizations(response.data.data)
@@ -195,6 +255,9 @@ function App() {
   async function loadRequests() {
     const response = await api.get('/membership-requests')
     setRequests(response.data.data)
+    requestStatusesRef.current = new Map(
+      response.data.data.map((request) => [request.id, request.status]),
+    )
   }
 
   async function loadMyOrganizations() {
@@ -264,12 +327,14 @@ function App() {
       api.get('/organizations'),
       api.get('/membership-requests'),
       api.get('/my-organizations'),
+      api.get('/my-archived-organizations'),
       api.get('/announcements'),
       api.get('/my-events'),
       api.get('/my-dues'),
       api.get('/user'),
+      api.get('/my-organization-members'),
     ])
-      .then(([orgResponse, requestResponse, membershipResponse, announcementResponse, eventResponse, duesResponse, userResponse]) => {
+      .then(([orgResponse, requestResponse, membershipResponse, archivedResponse, announcementResponse, eventResponse, duesResponse, userResponse, memberResponse]) => {
         if (cancelled) return
         if (user.is_admin !== userResponse.data.user.is_admin) {
           localStorage.setItem('orglife_user', JSON.stringify(userResponse.data.user))
@@ -278,7 +343,12 @@ function App() {
         setOrganizations(orgResponse.data.data)
         setColleges(orgResponse.data.meta.colleges)
         setRequests(requestResponse.data.data)
+        requestStatusesRef.current = new Map(
+          requestResponse.data.data.map((request) => [request.id, request.status]),
+        )
         setMyOrganizations(membershipResponse.data.data)
+        setArchivedOrganizations(archivedResponse.data.data)
+        setMyOrganizationMembers(memberResponse.data.data)
         setAnnouncements(announcementResponse.data.data)
         setMyEvents(eventResponse.data.data)
         setMyDues(duesResponse.data.data)
@@ -307,14 +377,18 @@ function App() {
     api.defaults.headers.common.Authorization = `Bearer ${token}`
     setError('')
     setNotice('')
+    setDecisionNotifications([])
+    setArchivedOrganizations([])
     setUser(userData)
     setProfileName(userData.name)
+    setProfileCourse(userData.course || '')
   }
 
   function updateUserProfile(userData) {
     localStorage.setItem('orglife_user', JSON.stringify(userData))
     setUser(userData)
     setProfileName(userData.name)
+    setProfileCourse(userData.course || '')
   }
 
   async function handleLogout() {
@@ -331,10 +405,17 @@ function App() {
       setSelectedOrganization(null)
       setRequests([])
       setMyOrganizations([])
+      setArchivedOrganizations([])
+      setMyOrganizationMembers([])
+      setSelectedSearchMember(null)
       setOfficerRequests([])
       setPendingJoinRequestCount(0)
       setPendingProposalCount(0)
       setPendingPaymentCount(0)
+      setPendingOrganizationReportCount(0)
+      setDecisionNotifications([])
+      setNotificationPanelOpen(false)
+      setProfileMenuOpen(false)
       setOfficerMembers([])
       setOfficerEvents([])
       setEventAttendance([])
@@ -356,12 +437,14 @@ function App() {
       setPaymentProofPreviewId(null)
       setMyProposals([])
       setAdminProposals([])
+      setAdminOrganizationReports([])
       setDraftProposalId(null)
       setProposalForm({ name: '', category: '', college: '', cause: '', mission: '' })
       setProposalDecisionNotes({})
       setEditingEventId(null)
       setEventForm({ title: '', description: '', location: '', starts_at: '', seat_limit: '' })
       setSelectedDuesOrganizationId('')
+      requestStatusesRef.current = null
     }
   }
 
@@ -388,6 +471,7 @@ function App() {
     await runAction(async () => {
       const formData = new FormData()
       formData.append('name', profileName.trim())
+      formData.append('course', profileCourse.trim())
       formData.append('_method', 'PATCH')
       if (profilePictureFile) formData.append('profile_picture', profilePictureFile)
       const response = await api.post('/profile', formData, {
@@ -418,6 +502,44 @@ function App() {
     })
   }
 
+  async function archiveOrganization(organizationId) {
+    if (!selectedOrganization) return
+
+    const organizationName = selectedOrganization.name
+    const confirmed = window.confirm(
+      `Archive ${organizationName}? It will be removed from active listings, while its membership, event, announcement, and payment history will be retained.`,
+    )
+    if (!confirmed) return
+
+    await runAction(async () => {
+      await api.delete(`/organizations/${organizationId}`)
+      const [
+        organizationResponse,
+        membershipResponse,
+        archivedResponse,
+        announcementResponse,
+        eventResponse,
+        memberResponse,
+      ] = await Promise.all([
+        api.get('/organizations'),
+        api.get('/my-organizations'),
+        api.get('/my-archived-organizations'),
+        api.get('/announcements'),
+        api.get('/my-events'),
+        api.get('/my-organization-members'),
+      ])
+      setOrganizations(organizationResponse.data.data)
+      setMyOrganizations(membershipResponse.data.data)
+      setArchivedOrganizations(archivedResponse.data.data)
+      setAnnouncements(announcementResponse.data.data)
+      setMyEvents(eventResponse.data.data)
+      setMyOrganizationMembers(memberResponse.data.data)
+      setSelectedOrganization(null)
+      setMembers([])
+      setActivePage('Discover')
+    }, `${organizationName} was archived. Its history has been retained.`)
+  }
+
   async function viewMembers() {
     if (!selectedOrganization) return
     await runAction(async () => {
@@ -435,6 +557,15 @@ function App() {
       const response = await api.get(`/organizations/${organizationId}`)
       setSelectedOrganization(response.data.data)
     }, 'Your request to join has been sent.')
+  }
+
+  async function reportOrganization(organizationId, reason) {
+    let submitted = false
+    await runAction(async () => {
+      await api.post(`/organizations/${organizationId}/reports`, { reason })
+      submitted = true
+    }, 'Your report has been sent to the OrgLife team.')
+    return submitted
   }
 
   async function withdrawRequest(organizationId) {
@@ -511,6 +642,24 @@ function App() {
       setPendingProposalCount(response.data.data.length)
       setActivePage('Admin Proposals')
     })
+  }
+
+  async function openAdminOrganizationReports() {
+    await runAction(async () => {
+      const response = await api.get('/admin/organization-reports')
+      setAdminOrganizationReports(response.data.data)
+      setPendingOrganizationReportCount(response.data.data.filter((report) => report.status === 'pending').length)
+      setActivePage('Admin Reports')
+    })
+  }
+
+  async function reviewOrganizationReport(reportId, status) {
+    await runAction(async () => {
+      await api.patch(`/admin/organization-reports/${reportId}`, { status })
+      const response = await api.get('/admin/organization-reports')
+      setAdminOrganizationReports(response.data.data)
+      setPendingOrganizationReportCount(response.data.data.filter((report) => report.status === 'pending').length)
+    }, `Organization report ${status}.`)
   }
 
   function changeProposalField(event) {
@@ -1013,7 +1162,71 @@ function App() {
     (duesYearFilter === 'all' || due.school_year === duesYearFilter)
     && (duesStatusFilter === 'all' || due.members.some((member) => matchesDuesStatus(member.status))))
   const duesReminders = myDues.filter((due) => duesReminder(due))
+  const notificationItems = [
+    ...decisionNotifications.map((notification) => ({
+      key: `request-${notification.requestId}`,
+      title: `Join request ${notification.status}`,
+      detail: notification.organizationName,
+      onClick: () => navTo('My Requests'),
+      unread: !notification.read,
+    })),
+    ...(duesReminders.length ? [{
+      key: 'dues-reminders',
+      title: `${duesReminders.length} dues reminder${duesReminders.length === 1 ? '' : 's'}`,
+      detail: 'Upcoming or overdue payments',
+      onClick: () => {
+        setNotificationPanelOpen(false)
+        openDuesScreen()
+      },
+    }] : []),
+    ...(pendingJoinRequestCount ? [{
+      key: 'join-requests',
+      title: `${pendingJoinRequestCount} join request${pendingJoinRequestCount === 1 ? '' : 's'} to review`,
+      detail: 'Officer tools',
+      onClick: () => {
+        setNotificationPanelOpen(false)
+        openOfficerScreen()
+      },
+    }] : []),
+    ...(pendingProposalCount ? [{
+      key: 'proposals',
+      title: `${pendingProposalCount} proposal${pendingProposalCount === 1 ? '' : 's'} to review`,
+      detail: user.is_admin ? 'Admin proposals' : 'Review proposals',
+      onClick: () => {
+        setNotificationPanelOpen(false)
+        openAdminProposals()
+      },
+    }] : []),
+    ...(pendingPaymentCount ? [{
+      key: 'payments',
+      title: `${pendingPaymentCount} dues payment${pendingPaymentCount === 1 ? '' : 's'} to review`,
+      detail: 'Payments',
+      onClick: () => {
+        setNotificationPanelOpen(false)
+        openDuesScreen()
+      },
+    }] : []),
+    ...(pendingOrganizationReportCount ? [{
+      key: 'organization-reports',
+      title: `${pendingOrganizationReportCount} organization report${pendingOrganizationReportCount === 1 ? '' : 's'} to review`,
+      detail: 'Organization reports',
+      onClick: () => {
+        setNotificationPanelOpen(false)
+        openAdminOrganizationReports()
+      },
+    }] : []),
+  ]
+  const notificationCount = decisionNotifications.filter((notification) => !notification.read).length
+    + duesReminders.length
+    + pendingJoinRequestCount
+    + pendingProposalCount
+    + pendingPaymentCount
+    + pendingOrganizationReportCount
   const officerOrganizationScope = officerOrganizations.map((organization) => organization.id).join(',')
+  const searchTerm = myMemberSearch.trim().toLocaleLowerCase()
+  const matchingOrganizationMembers = searchTerm
+    ? myOrganizationMembers.filter((member) => member.name.toLocaleLowerCase().includes(searchTerm))
+    : []
 
   useEffect(() => {
     if (!user) return undefined
@@ -1021,7 +1234,8 @@ function App() {
     let active = true
     const refreshReviewNotifications = async () => {
       try {
-        const [requestResponse, proposalResponse, paymentResponse] = await Promise.all([
+        const [myRequestResponse, requestResponse, proposalResponse, paymentResponse, reportResponse] = await Promise.all([
+          api.get('/membership-requests'),
           user.is_admin || officerOrganizationScope
             ? api.get('/officer/requests')
             : Promise.resolve(null),
@@ -1031,11 +1245,44 @@ function App() {
           user.is_admin || duesManagerScope
             ? api.get('/officer/pending-dues-payments')
             : Promise.resolve(null),
+          user.is_admin
+            ? api.get('/admin/organization-reports')
+            : Promise.resolve(null),
         ])
         if (!active) return
+        const nextRequests = myRequestResponse.data.data
+        if (requestStatusesRef.current) {
+          const previousStatuses = requestStatusesRef.current
+          const decidedRequests = nextRequests.filter((request) =>
+            previousStatuses.get(request.id) === 'pending'
+            && ['approved', 'declined'].includes(request.status))
+          if (decidedRequests.length) {
+            const decidedRequest = decidedRequests[0]
+            setNotice(`Your request to join ${decidedRequest.organization.name} was ${decidedRequest.status}.`)
+            setDecisionNotifications((current) => {
+              const knownRequestIds = new Set(current.map((notification) => notification.requestId))
+              const newNotifications = decidedRequests
+                .filter((request) => !knownRequestIds.has(request.id))
+                .map((request) => ({
+                  requestId: request.id,
+                  organizationName: request.organization.name,
+                  status: request.status,
+                  read: false,
+                }))
+              return [...newNotifications, ...current]
+            })
+          }
+        }
+        requestStatusesRef.current = new Map(
+          nextRequests.map((request) => [request.id, request.status]),
+        )
+        setRequests(nextRequests)
         setPendingJoinRequestCount(requestResponse?.data.data.length || 0)
         setPendingProposalCount(proposalResponse?.data.data.length || 0)
         setPendingPaymentCount(paymentResponse?.data.data.count || 0)
+        if (reportResponse) {
+          setPendingOrganizationReportCount(reportResponse.data.data.filter((report) => report.status === 'pending').length)
+        }
       } catch (notificationError) {
         if (!active) return
         if (notificationError.response?.status === 401) {
@@ -1067,8 +1314,19 @@ function App() {
   function navTo(page) {
     setError('')
     setNotice('')
+    setProfileMenuOpen(false)
+    setNotificationPanelOpen(false)
     setSelectedOrganization(null)
     setActivePage(page)
+  }
+
+  function toggleNotificationPanel() {
+    const willOpen = !notificationPanelOpen
+    setNotificationPanelOpen(willOpen)
+    setProfileMenuOpen(false)
+    if (willOpen) {
+      setDecisionNotifications((current) => current.map((notification) => ({ ...notification, read: true })))
+    }
   }
 
   return (
@@ -1085,9 +1343,10 @@ function App() {
             <span>{page}</span>
           </button>
         ))}
-        <button className={`nav-link ${activePage === 'Profile Settings' ? 'active' : ''}`} onClick={() => navTo('Profile Settings')}>
-          <Icon name="members" /><span>Profile Settings</span>
-        </button>
+        {user.is_admin && <button className={`nav-link ${activePage === 'Admin Reports' ? 'active' : ''}`} onClick={openAdminOrganizationReports}>
+          <Icon name="officer" /><span>Organization Reports</span>
+          {pendingOrganizationReportCount > 0 && <span className="nav-count">{pendingOrganizationReportCount}</span>}
+        </button>}
         {isOrganizationOfficer && <button className={`nav-link ${activePage === 'My Proposals' ? 'active' : ''}`} onClick={openMyProposals}>
           <Icon name="announcement" /><span>My Proposals</span>
         </button>}
@@ -1105,23 +1364,6 @@ function App() {
             {pendingJoinRequestCount > 0 && <span className="nav-count">{pendingJoinRequestCount}</span>}
           </button>
         )}
-        <div className="sidebar-bottom">
-          <button
-            type="button"
-            className="profile-navigation-button"
-            onClick={() => navTo('Profile Settings')}
-            aria-label="Open profile settings"
-          >
-            <UserAvatar name={user.name} src={user.profile_picture_url} />
-          </button>
-          <div className="sidebar-user">
-            <button type="button" className="profile-name-button" onClick={() => navTo('Profile Settings')}>
-              {user.name}
-            </button>
-            <p>{user.email}</p>
-            <button className="logout-button" onClick={handleLogout}>Log out</button>
-          </div>
-        </div>
       </aside>
 
       <main className="main-content">
@@ -1130,7 +1372,70 @@ function App() {
             <p className="breadcrumb">Home / {activePage}</p>
             <h1>{activePage}</h1>
           </div>
-          <div className="topbar-right"><span className="status-dot" />Student Portal<button type="button" className="profile-navigation-button" onClick={() => navTo('Profile Settings')} aria-label="Open profile settings"><UserAvatar name={user.name} src={user.profile_picture_url} size="small" /></button></div>
+          <div className="topbar-right">
+            <span className="status-dot" />
+            <span>Student Portal</span>
+            <div className="notification-menu-wrapper" ref={notificationPanelRef}>
+              <button
+                type="button"
+                className="notification-button"
+                aria-label={notificationCount > 0 ? `Notifications, ${notificationCount} items` : 'Notifications'}
+                aria-expanded={notificationPanelOpen}
+                aria-controls="notification-panel"
+                onClick={toggleNotificationPanel}
+              >
+                <Icon name="bell" />
+                {notificationCount > 0 && <span className="notification-count">{notificationCount > 99 ? '99+' : notificationCount}</span>}
+              </button>
+              {notificationPanelOpen && <div className="notification-dropdown" id="notification-panel" aria-label="Notifications">
+                <div className="notification-panel-heading">
+                  <strong>Notifications</strong>
+                  <span>{notificationCount ? `${notificationCount} need attention` : 'You’re all caught up'}</span>
+                </div>
+                {notificationItems.length ? <div className="notification-list">
+                  {notificationItems.map((item) => (
+                    <button
+                      type="button"
+                      className={`notification-item ${item.unread ? 'unread' : ''}`}
+                      key={item.key}
+                      onClick={item.onClick}
+                    >
+                      <span className="notification-item-title">{item.title}</span>
+                      <span className="notification-item-detail">{item.detail}</span>
+                    </button>
+                  ))}
+                </div> : <p className="notification-empty">New updates and items needing attention will appear here.</p>}
+              </div>}
+            </div>
+            <div className="profile-menu-wrapper" ref={profileMenuRef}>
+              <button
+                type="button"
+                className="profile-navigation-button"
+                aria-label={`Open profile menu for ${user.name}`}
+                aria-expanded={profileMenuOpen}
+                onClick={() => {
+                  setNotificationPanelOpen(false)
+                  setProfileMenuOpen((open) => !open)
+                }}
+              >
+                <UserAvatar name={user.name} src={user.profile_picture_url} size="small" />
+              </button>
+              {profileMenuOpen && <div className="profile-dropdown">
+                <div className="profile-dropdown-identity">
+                  <button
+                    type="button"
+                    className="profile-dropdown-name"
+                    onClick={() => navTo('Profile Settings')}
+                  >
+                    {user.name}
+                  </button>
+                  <span>{user.email}</span>
+                </div>
+                <button type="button" onClick={() => navTo('Profile Settings')}>Profile Settings</button>
+                <button type="button" onClick={() => { setProfileMenuOpen(false); handleLogout() }}>Log out</button>
+              </div>}
+            </div>
+          </div>
         </header>
 
         {error && <div className="app-message error-message" role="alert">{error}</div>}
@@ -1147,6 +1452,35 @@ function App() {
               <Stat icon="organizations" label="Student organizations" value={organizations.length} tone="purple" />
               <Stat icon="requests" label="My requests" value={requests.length} tone="green" />
               <Stat icon="members" label="My memberships" value={myOrganizations.length} tone="orange" />
+            </section>
+            <section className="content-panel dashboard-section">
+              <div className="section-heading">
+                <div><span className="eyebrow">YOUR ORGANIZATIONS</span><h2>Activity summary</h2><p>Membership, event, and announcement activity for your communities.</p></div>
+                {myOrganizations.length > 0 && <span className="result-count">{myOrganizations.length} {myOrganizations.length === 1 ? 'organization' : 'organizations'}</span>}
+              </div>
+              {myOrganizations.length ? <div className="dashboard-activity-grid">{myOrganizations.map((membership) => {
+                const organization = organizations.find((item) => String(item.id) === String(membership.id))
+                const upcomingCount = myEvents.filter((event) =>
+                  String(event.organization_id) === String(membership.id) && !event.is_past && !event.is_cancelled).length
+                const announcementCount = announcements.filter((announcement) =>
+                  String(announcement.organization.id) === String(membership.id)).length
+                return <article className={`dashboard-activity-card ${collegeTheme(membership.college)}`} key={membership.id}>
+                  <div className="dashboard-activity-heading">
+                    <CollegeLogo college={membership.college} organizationName={membership.name} />
+                    <div className="dashboard-activity-title">
+                      <h3 title={membership.name}>{membership.name}</h3>
+                      <span>{membership.category}</span>
+                    </div>
+                    <span className="role-pill">{membership.role}</span>
+                  </div>
+                  <dl>
+                    <div><dt><Icon name="members" />Members</dt><dd>{organization?.members ?? '—'}</dd></div>
+                    <div><dt><Icon name="calendar" />Upcoming</dt><dd>{upcomingCount}</dd></div>
+                    <div><dt><Icon name="announcement" />Updates</dt><dd>{announcementCount}</dd></div>
+                  </dl>
+                  <button className="dashboard-activity-link" onClick={() => openOrganization(membership.id)}>View organization activity <Icon name="arrowRight" /></button>
+                </article>
+              })}</div> : <EmptyState title="No organization activity yet" description="Join an organization to see its member, event, and announcement activity." action="Discover organizations" onAction={() => navTo('Discover')} />}
             </section>
             {duesReminders.length > 0 && <section className="dues-reminder-panel">
               <div className="dues-reminder-heading">
@@ -1188,6 +1522,7 @@ function App() {
                 events={myEvents}
                 onOpenOrganization={openOrganization}
                 loading={loading}
+                isMember
               />
             </section>
           </>
@@ -1231,6 +1566,10 @@ function App() {
                 <input value={profileName} onChange={(changeEvent) => setProfileName(changeEvent.target.value)} required maxLength={255} />
               </label>
               <label className="profile-name-field">
+                Course or program
+                <input value={profileCourse} onChange={(changeEvent) => setProfileCourse(changeEvent.target.value)} maxLength={150} placeholder="e.g. BS Computer Science" />
+              </label>
+              <label className="profile-name-field">
                 Email address
                 <input value={user.email} readOnly />
               </label>
@@ -1272,6 +1611,7 @@ function App() {
             onBack={() => navTo('Discover')}
             onJoin={() => requestToJoin(selectedOrganization.id)}
             onWithdraw={() => withdrawRequest(selectedOrganization.id)}
+            onReportOrganization={reportOrganization}
             onViewMembers={viewMembers}
             onPostAnnouncement={postAnnouncement}
             announcementTitle={announcementTitle}
@@ -1291,6 +1631,7 @@ function App() {
             onSaveEvent={saveOrganizationEvent}
             onCancelEditEvent={resetEventForm}
             isAdmin={user.is_admin}
+            onArchiveOrganization={archiveOrganization}
           />
         )}
 
@@ -1377,12 +1718,91 @@ function App() {
           </section>
         )}
 
+        {activePage === 'Admin Reports' && user.is_admin && (
+          <section className="content-panel proposal-page">
+            <div className="section-heading">
+              <div><span className="eyebrow">COMMUNITY SAFETY</span><h2>Organization reports</h2><p>Review reports submitted by OrgLife users.</p></div>
+              <span className="member-total">{adminOrganizationReports.filter((report) => report.status === 'pending').length} awaiting review</span>
+            </div>
+            {adminOrganizationReports.length ? <div className="proposal-list">{adminOrganizationReports.map((report) => (
+              <article className="proposal-card organization-report-card" key={report.id}>
+                <header><div><h3>{report.organization.name}</h3><span>{report.organization.college} · Reported by {report.reporter.name} ({report.reporter.email})</span></div><span className={`proposal-status status-${report.status}`}>{report.status}</span></header>
+                <p>{report.reason}</p>
+                <div className="proposal-decision-details">
+                  <span>Submitted {new Date(report.created_at).toLocaleString()}</span>
+                  {report.resolution_note && <p>{report.resolution_note}</p>}
+                  {report.status === 'pending' && <div className="proposal-card-actions">
+                    <button className="approve-button" disabled={loading} onClick={() => reviewOrganizationReport(report.id, 'resolved')}>Resolve report</button>
+                    <button className="decline-button" disabled={loading} onClick={() => reviewOrganizationReport(report.id, 'dismissed')}>Dismiss report</button>
+                  </div>}
+                </div>
+              </article>
+            ))}</div> : <EmptyState title="No organization reports" description="Reports submitted by users will appear here." />}
+          </section>
+        )}
+
         {activePage === 'My Organizations' && (
           <section className="content-panel">
             <div className="section-heading"><div><span className="eyebrow">YOUR COMMUNITIES</span><h2>My organizations</h2><p>Organizations you belong to and your roles.</p></div></div>
             {myOrganizations.length ? <div className="organization-grid">{myOrganizations.map((membership) => (
               <article className={`org-card ${collegeTheme(membership.college)}`} key={membership.id}><div className="org-card-top"><CollegeLogo college={membership.college} organizationName={membership.name} className="org-avatar" /><span className="role-pill">{membership.role}</span></div><span className="category">{membership.category}</span><h3>{membership.name}</h3><p className="org-cause">{membership.college}</p><button className="outline-button" onClick={() => openOrganization(membership.id)}>Open organization <Icon name="arrowRight" /></button></article>
             ))}</div> : <EmptyState title="You haven't joined an organization yet" description="Send a request to join an open organization to get started." action="Discover organizations" onAction={() => navTo('Discover')} />}
+            {archivedOrganizations.length > 0 && <section className="archived-organizations-section">
+              <div className="archived-organizations-heading">
+                <div><span className="eyebrow">RETAINED HISTORY</span><h3>Archived organizations</h3><p>These organizations are no longer active. Their records are preserved.</p></div>
+                <span className="archived-count">{archivedOrganizations.length} archived</span>
+              </div>
+              <div className="archived-organization-list">
+                {archivedOrganizations.map((organization) => (
+                  <article className={`archived-organization-card ${collegeTheme(organization.college)}`} key={organization.id}>
+                    <div className="archived-organization-header">
+                      <CollegeLogo college={organization.college} organizationName={organization.name} />
+                      <div className="archived-organization-title">
+                        <h4>{organization.name}</h4>
+                        <span>{organization.category} · {organization.college}</span>
+                      </div>
+                      <span className="archived-status">Archived</span>
+                    </div>
+                    <p className="archived-organization-cause">{organization.cause}</p>
+                    <dl className="archived-organization-stats">
+                      <div><dt>Archived</dt><dd>{new Date(organization.archived_at).toLocaleDateString()}</dd></div>
+                      <div><dt>Members</dt><dd>{organization.members}</dd></div>
+                      <div><dt>Events</dt><dd>{organization.events}</dd></div>
+                      <div><dt>Announcements</dt><dd>{organization.announcements}</dd></div>
+                      <div><dt>Dues schedules</dt><dd>{organization.dues_schedules}</dd></div>
+                    </dl>
+                    <details className="archived-organization-mission">
+                      <summary>View mission</summary>
+                      <p>{organization.mission}</p>
+                    </details>
+                  </article>
+                ))}
+              </div>
+            </section>}
+            <section className="member-search-section">
+              <div className="dues-section-heading"><div><h3>Find members</h3><p>Search by name across the organizations you belong to.</p></div></div>
+              <label className="member-search-field">Member name
+                <input type="search" value={myMemberSearch} onChange={(event) => setMyMemberSearch(event.target.value)} placeholder="Search members by name" />
+              </label>
+              {searchTerm
+                ? matchingOrganizationMembers.length
+                  ? <div className="member-search-results">{matchingOrganizationMembers.map((member) => (
+                    <button
+                      type="button"
+                      className="member-search-result"
+                      key={`${member.organization.id}-${member.user_id}`}
+                      onClick={() => setSelectedSearchMember(member)}
+                      aria-label={`View ${member.name}'s profile in ${member.organization.name}`}
+                    >
+                      <UserAvatar name={member.name} src={member.profile_picture_url} size="compact" />
+                      <div><strong>{member.name}</strong><span>{member.course || member.email}</span></div>
+                      <span className="role-pill">{member.role}</span>
+                      <span>{member.organization.name}</span>
+                    </button>
+                  ))}</div>
+                  : <EmptyState title="No members found" description={`No member names match “${myMemberSearch.trim()}” in your organizations.`} />
+                : <p className="member-search-hint">Enter a name to search your organization rosters.</p>}
+            </section>
           </section>
         )}
 
@@ -1512,8 +1932,19 @@ function App() {
                 {filteredManagerDues.length ? filteredManagerDues.map((due) => {
                   const visibleMembers = due.members.filter((member) => matchesDuesStatus(member.status))
                   const outstandingCount = due.members.filter((member) => Number(member.balance) > 0).length
+                  const billedAmount = Number(due.amount) * due.members.length
+                  const outstandingAmount = due.members.reduce((total, member) => total + Number(member.balance), 0)
+                  const fullyPaidCount = due.members.filter((member) => member.status === 'paid').length
+                  const partialCount = due.members.filter((member) => member.status === 'partial').length
                   return <article className="dues-year-card" key={due.id}>
                     <header><div><h4>{due.school_year}</h4><span>{formatCurrency(due.amount)} per member · Due {formatDate(due.due_date)}</span></div><div className="dues-year-summary"><strong>{outstandingCount} unpaid</strong><span>{formatCurrency(due.total_collected)} collected</span><button className="text-button" type="button" onClick={() => editDuesSchedule(due)}>Edit schedule</button></div></header>
+                    <div className="dues-year-summary-grid" aria-label={`Year-end dues summary for ${due.school_year}`}>
+                      <div><span>Total billed</span><strong>{formatCurrency(billedAmount)}</strong></div>
+                      <div><span>Collected</span><strong>{formatCurrency(due.total_collected)}</strong></div>
+                      <div><span>Outstanding</span><strong>{formatCurrency(outstandingAmount)}</strong></div>
+                      <div><span>Members paid</span><strong>{fullyPaidCount} / {due.members.length}</strong></div>
+                      <div><span>Partial payments</span><strong>{partialCount}</strong></div>
+                    </div>
                     {visibleMembers.length ? <div className="dues-table-wrap">
                       <table className="dues-table dues-roster-table">
                         <thead><tr><th>Member</th><th>Amount</th><th>Paid</th><th>Balance</th><th>Status</th><th>Record payment</th></tr></thead>
@@ -1574,7 +2005,7 @@ function App() {
             <section className="officer-members">
               <div className="officer-section-heading">
                 <div><h3>Manage members</h3><p>Members are grouped by organization and role.</p></div>
-                <span className="member-total">{officerMembers.length} members</span>
+                <div className="officer-member-tools"><span className="member-total">{officerMembers.length} members</span><button type="button" className="outline-button" disabled={!officerMembers.length} onClick={() => window.print()}>Print member list</button></div>
               </div>
               {officerMembers.length ? <div className="officer-member-groups">{officerOrganizations
                 .filter((organization) => officerMembers.some((member) => member.organization.id === organization.id))
@@ -1650,6 +2081,18 @@ function App() {
                     </article>
                   )
                 })}</div> : <EmptyState title="No members found" description="Members of your organizations will appear here." />}
+              <div className="print-member-sheet">
+                <h1>OrgLife Member List</h1>
+                <p>{officerOrganizationId === 'all' ? 'All managed organizations' : officerOrganizations.find((organization) => String(organization.id) === String(officerOrganizationId))?.name}</p>
+                <table>
+                  <thead><tr><th>Organization</th><th>Member</th><th>Course / program</th><th>Email</th><th>Role</th></tr></thead>
+                  <tbody>{officerMembers.map((member) => (
+                    <tr key={`${member.organization.id}-${member.user_id}`}>
+                      <td>{member.organization.name}</td><td>{member.name}</td><td>{member.course || '—'}</td><td>{member.email}</td><td>{member.role}</td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
             </section>
             <section className="officer-members">
               <h3>Event attendance</h3>
@@ -1857,6 +2300,38 @@ function App() {
           </section>
         </div>}
 
+        {selectedSearchMember && <div
+          className="member-profile-overlay"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setSelectedSearchMember(null)
+          }}
+        >
+          <section className="member-profile-dialog" role="dialog" aria-modal="true" aria-labelledby="member-profile-title">
+            <header className="member-profile-heading">
+              <div className="member-profile-identity">
+                <UserAvatar name={selectedSearchMember.name} src={selectedSearchMember.profile_picture_url} size="large" />
+                <div>
+                  <span className="eyebrow">ORGANIZATION MEMBER</span>
+                  <h2 id="member-profile-title">{selectedSearchMember.name}</h2>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="text-button"
+                aria-label="Close member profile"
+                onClick={() => setSelectedSearchMember(null)}
+              >Close</button>
+            </header>
+            <dl className="member-profile-details">
+              <div><dt>Course / program</dt><dd>{selectedSearchMember.course || 'Not provided'}</dd></div>
+              <div><dt>Email</dt><dd><a href={`mailto:${selectedSearchMember.email}`}>{selectedSearchMember.email}</a></dd></div>
+              <div><dt>Organization</dt><dd>{selectedSearchMember.organization.name} · {selectedSearchMember.organization.college}</dd></div>
+              <div><dt>Role</dt><dd>{selectedSearchMember.role}</dd></div>
+            </dl>
+          </section>
+        </div>}
+
         <footer>OrgLife · Student Organization Management System</footer>
       </main>
     </div>
@@ -1891,6 +2366,7 @@ function OrganizationDetails({
   onBack,
   onJoin,
   onWithdraw,
+  onReportOrganization,
   onViewMembers,
   onPostAnnouncement,
   announcementTitle,
@@ -1906,11 +2382,15 @@ function OrganizationDetails({
   onDeleteAnnouncement,
   onCancelEvent,
   onEditEvent,
+  onArchiveOrganization,
   isAdmin = false,
 }) {
+  const [reportOpen, setReportOpen] = useState(false)
+  const [reportReason, setReportReason] = useState('')
   const isMember = Boolean(organization.membership_role)
   const isOfficer = isAdmin || organization.membership_role === 'President'
   const canRequest = organization.open && !isMember && organization.request_status !== 'pending'
+  const upcomingEventCount = organization.events.filter((event) => !event.is_past && !event.is_cancelled).length
 
   return (
     <section className={`content-panel organization-detail ${collegeTheme(organization.college)}`}>
@@ -1920,6 +2400,11 @@ function OrganizationDetails({
         <div><span className="category">{organization.category} · {organization.college}</span><h2>{organization.name}</h2><p>{organization.cause}</p></div>
         <span className={`membership ${organization.open ? 'open' : 'closed'}`}>{organization.open ? 'Open membership' : 'Membership closed'}</span>
       </div>
+      <section className="organization-activity-summary" aria-label="Organization activity summary">
+        <div><span className="eyebrow">ACTIVITY SUMMARY</span><strong>{organization.members} members</strong><span>Current organization community</span></div>
+        <div><span className="eyebrow">UPCOMING</span><strong>{upcomingEventCount} events</strong><span>Scheduled and not cancelled</span></div>
+        <div><span className="eyebrow">COMMUNITY UPDATES</span><strong>{organization.announcements?.length || 0} announcements</strong><span>{isMember ? 'Visible to members' : 'Join to see member announcements'}</span></div>
+      </section>
       <div className="detail-columns">
         <section className="detail-block"><h3>Our mission</h3><p>{organization.mission}</p></section>
         <section className="detail-block"><h3>Officers</h3>{organization.officers.length ? <ul className="plain-list">{organization.officers.map((officer) => <li key={`${officer.name}-${officer.role}`}><div className="officer-list-person"><UserAvatar name={officer.name} src={officer.profile_picture_url} size="compact" /><strong>{officer.name}</strong></div><span>{officer.role}</span></li>)}</ul> : <p>Officer information hasn't been added yet.</p>}</section>
@@ -1971,8 +2456,34 @@ function OrganizationDetails({
         {organization.request_status === 'declined' && <span className="status-label status-declined">Request declined</span>}
         {isMember && <span className="role-pill">Member · {organization.membership_role}</span>}
         {(isMember || isAdmin) && <button className="outline-button members-toggle" disabled={loading} onClick={onViewMembers}>{members.length ? 'Refresh member list' : 'View member list'}</button>}
+        {!isAdmin && <button className="text-button danger-text" type="button" onClick={() => setReportOpen((open) => !open)}>{reportOpen ? 'Cancel report' : 'Report organization'}</button>}
+        {isOfficer && <button className="decline-button archive-organization-button" type="button" disabled={loading} onClick={() => onArchiveOrganization(organization.id)} title="Hide this organization from active listings while retaining its history">Archive organization</button>}
       </div>
-      {members.length > 0 && <section className="detail-block"><h3>Members and roles ({members.length})</h3><div className="member-list">{members.map((member) => <div className="member-row" key={member.email}><div className="request-person member-identity"><UserAvatar name={member.name} src={member.profile_picture_url} size="compact" /><div className="member-identity-details"><strong>{member.name}</strong><span>{member.email}</span></div></div><span className="role-pill">{member.role}</span></div>)}</div></section>}
+      {reportOpen && <form className="organization-report-form" onSubmit={async (event) => {
+        event.preventDefault()
+        const submitted = await onReportOrganization(organization.id, reportReason)
+        if (submitted) {
+          setReportReason('')
+          setReportOpen(false)
+        }
+      }}>
+        <label>What seems wrong?
+          <textarea value={reportReason} onChange={(event) => setReportReason(event.target.value)} minLength={10} maxLength={2000} rows="4" required placeholder="Describe the inaccurate or concerning information." />
+        </label>
+        <button className="decline-button" disabled={loading || reportReason.trim().length < 10}>Submit report</button>
+      </form>}
+      {members.length > 0 && <section className="detail-block">
+        <div className="organization-member-list-heading"><h3>Members and roles ({members.length})</h3><button type="button" className="outline-button" onClick={() => window.print()}>Print member list</button></div>
+        <div className="member-list">{members.map((member) => <div className="member-row" key={member.email}><div className="request-person member-identity"><UserAvatar name={member.name} src={member.profile_picture_url} size="compact" /><div className="member-identity-details"><strong>{member.name}</strong><span>{member.email}</span></div></div><span className="role-pill">{member.role}</span></div>)}</div>
+        <div className="print-member-sheet organization-print-sheet">
+          <h1>{organization.name} Member List</h1>
+          <p>{organization.college} · {members.length} members</p>
+          <table>
+            <thead><tr><th>Member</th><th>Course / program</th><th>Email</th><th>Role</th></tr></thead>
+            <tbody>{members.map((member) => <tr key={member.user_id}><td>{member.name}</td><td>{member.course || '—'}</td><td>{member.email}</td><td>{member.role}</td></tr>)}</tbody>
+          </table>
+        </div>
+      </section>}
     </section>
   )
 }
@@ -2004,6 +2515,8 @@ function EventList({ events, isMember = false, loading = false, onRsvp, onOpenOr
               <span>{event.rsvp_count} going</span>
               <span>{event.attendance_count} attended</span>
             </div>
+            {isMember && event.going_members?.length > 0 && <p className="event-going-members"><strong>Going:</strong> {event.going_members.map((member) => member.name).join(', ')}</p>}
+            {isMember && event.rsvp_count === 0 && <p className="event-going-members">No one has RSVP’d yet.</p>}
             {isMember && !event.is_past && !event.is_cancelled && onRsvp && (
               <button
                 className={event.rsvped ? 'decline-button' : 'approve-button'}

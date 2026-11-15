@@ -23,7 +23,14 @@ class Organization extends Model
     {
         return [
             'open_membership' => 'boolean',
+            'archived_at' => 'datetime',
         ];
+    }
+
+    public function resolveRouteBindingQuery($query, $value, $field = null)
+    {
+        return parent::resolveRouteBindingQuery($query, $value, $field)
+            ->whereNull($this->qualifyColumn('archived_at'));
     }
 
     public function events(): HasMany
@@ -49,5 +56,10 @@ class Organization extends Model
     public function dues(): HasMany
     {
         return $this->hasMany(OrganizationDue::class);
+    }
+
+    public function reports(): HasMany
+    {
+        return $this->hasMany(OrganizationReport::class);
     }
 }

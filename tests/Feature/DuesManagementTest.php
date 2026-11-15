@@ -436,6 +436,48 @@ class DuesManagementTest extends TestCase
         ])->assertUnprocessable();
     }
 
+    public function test_dues_schedule_can_be_adjusted_when_combined_payments_exceed_per_member_dues(): void
+    {
+        $treasurer = User::factory()->create();
+        $members = [User::factory()->create(), User::factory()->create()];
+        $organization = $this->organization();
+        $this->membership($organization, $treasurer, 'Treasurer');
+        foreach ($members as $member) {
+            $this->membership($organization, $member);
+        }
+        $due = $organization->dues()->create([
+            'school_year' => '2026-2027',
+            'amount' => '100.00',
+            'due_date' => now()->subDay()->toDateString(),
+        ]);
+        foreach ($members as $member) {
+            $due->payments()->create([
+                'user_id' => $member->id,
+                'amount' => '75.00',
+                'paid_at' => now(),
+                'status' => 'approved',
+            ]);
+        }
+
+        Sanctum::actingAs($treasurer);
+        $newDueDate = now()->addDays(10)->toDateString();
+        $this->postJson("/api/officer/organizations/{$organization->id}/dues", [
+            'school_year' => '2026-2027',
+            'amount' => '100.00',
+            'due_date' => $newDueDate,
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.due_date', $newDueDate);
+
+        $managementResponse = $this->getJson("/api/officer/organizations/{$organization->id}/dues")
+            ->assertOk();
+        foreach ($members as $member) {
+            $memberDues = collect($managementResponse->json('data.dues.0.members'))
+                ->firstWhere('user_id', $member->id);
+            $this->assertSame('partial', $memberDues['status']);
+        }
+    }
+
     private function organization(array $overrides = []): Organization
     {
         return Organization::create(array_merge([

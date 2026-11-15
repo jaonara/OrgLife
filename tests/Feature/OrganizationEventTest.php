@@ -34,11 +34,18 @@ class OrganizationEventTest extends TestCase
         $this->getJson("/api/organizations/{$organization->id}")
             ->assertOk()
             ->assertJsonPath('data.events.0.rsvped', true)
-            ->assertJsonPath('data.events.0.rsvp_count', 1);
+            ->assertJsonPath('data.events.0.rsvp_count', 1)
+            ->assertJsonPath('data.events.0.going_members.0.name', $member->name);
         $this->getJson('/api/my-events')
             ->assertOk()
             ->assertJsonPath('data.0.rsvped', true);
 
+        Sanctum::actingAs(User::factory()->create());
+        $this->getJson("/api/organizations/{$organization->id}")
+            ->assertOk()
+            ->assertJsonCount(0, 'data.events.0.going_members');
+
+        Sanctum::actingAs($member);
         $this->deleteJson("/api/organizations/{$organization->id}/events/{$event->id}/rsvp")
             ->assertOk()
             ->assertJsonPath('data.rsvped', false);

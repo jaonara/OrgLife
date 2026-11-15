@@ -29,15 +29,18 @@ class ProfileSettingsTest extends TestCase
         $response = $this->post('/api/profile', [
             '_method' => 'PATCH',
             'name' => 'Updated Profile Name',
+            'course' => 'BS Computer Science',
             'profile_picture' => UploadedFile::fake()->image('profile.png', 256, 256),
         ], ['Accept' => 'application/json']);
 
         $response->assertOk()
             ->assertJsonPath('user.name', 'Updated Profile Name')
+            ->assertJsonPath('user.course', 'BS Computer Science')
             ->assertJsonPath('user.email', $user->email);
 
         $user->refresh();
         $this->assertSame('Updated Profile Name', $user->name);
+        $this->assertSame('BS Computer Science', $user->course);
         $this->assertNotNull($user->profile_picture_path);
         Storage::disk('public')->assertExists($user->profile_picture_path);
         Storage::disk('public')->assertMissing($oldPath);
@@ -63,6 +66,18 @@ class ProfileSettingsTest extends TestCase
 
         Storage::disk('public')->assertMissing($path);
         $this->assertNull($user->fresh()->profile_picture_path);
+    }
+
+    public function test_updating_name_without_course_keeps_existing_course(): void
+    {
+        $user = User::factory()->create();
+        $user->course = 'BS Computer Science';
+        $user->save();
+        Sanctum::actingAs($user);
+
+        $this->patchJson('/api/profile', ['name' => 'Updated Name'])
+            ->assertOk()
+            ->assertJsonPath('user.course', 'BS Computer Science');
     }
 
     public function test_profile_picture_must_be_a_supported_image_within_the_size_limit(): void
