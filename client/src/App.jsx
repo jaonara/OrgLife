@@ -129,6 +129,7 @@ function App() {
   const [duesYearFilter, setDuesYearFilter] = useState('all')
   const [duesStatusFilter, setDuesStatusFilter] = useState('all')
   const [selectedDuesOrganizationId, setSelectedDuesOrganizationId] = useState('')
+  const [organizationPaymentReportRequested, setOrganizationPaymentReportRequested] = useState(false)
   const [duesSchoolYear, setDuesSchoolYear] = useState(() => {
     const year = new Date().getFullYear()
     return `${year}-${year + 1}`
@@ -884,6 +885,36 @@ function App() {
     setCorrectedDuesPaymentAmount('')
   }
 
+  function openExistingPaymentReceipt(payment) {
+    if (!selectedDuesMember) return
+
+    const organization = duesManagement.find(
+      (item) => String(item.organization.id) === String(selectedDuesMember.organizationId),
+    )?.organization
+    if (!organization) {
+      setError('Could not load the organization details for this payment receipt.')
+      return
+    }
+
+    setDuesReceipt({
+      receipt_number: `DUES-${String(payment.id).padStart(6, '0')}`,
+      organization: organization.name,
+      college: organization.college,
+      member_name: selectedDuesMember.member.name,
+      member_email: selectedDuesMember.member.email,
+      recorded_by: payment.recorded_by || 'Online payment',
+      school_year: selectedDuesMember.due.school_year,
+      due_date: selectedDuesMember.due.due_date,
+      dues_amount: selectedDuesMember.due.amount,
+      payment_amount: payment.amount,
+      status: payment.status,
+      reference_last_four: payment.reference_last_four,
+      total_paid: selectedDuesMember.member.paid_amount,
+      balance: selectedDuesMember.member.balance,
+      paid_at: payment.paid_at,
+    })
+  }
+
   async function correctDuesPayment(event) {
     event.preventDefault()
     if (!selectedDuesMember || !editingDuesPaymentId) return
@@ -1158,6 +1189,22 @@ function App() {
   const selectedDuesOrganization = selectedDuesManagement || (selectedOrganizationForDues
     ? { organization: selectedOrganizationForDues, dues: [] }
     : null)
+  const selectedOrganizationPayments = (selectedDuesManagement?.dues || [])
+    .flatMap((due) => due.members.flatMap((member) =>
+      (member.payments || []).map((payment) => ({ due, member, payment }))))
+    .sort((first, second) =>
+      new Date(second.payment.paid_at).getTime() - new Date(first.payment.paid_at).getTime())
+  const organizationPaymentTotals = selectedOrganizationPayments.reduce((totals, { payment }) => {
+    if (Object.prototype.hasOwnProperty.call(totals, payment.status)) {
+      totals[payment.status].count += 1
+      totals[payment.status].amount += Number(payment.amount)
+    }
+    return totals
+  }, {
+    approved: { count: 0, amount: 0 },
+    pending: { count: 0, amount: 0 },
+    rejected: { count: 0, amount: 0 },
+  })
   const filteredManagerDues = (selectedDuesOrganization?.dues || []).filter((due) =>
     (duesYearFilter === 'all' || due.school_year === duesYearFilter)
     && (duesStatusFilter === 'all' || due.members.some((member) => matchesDuesStatus(member.status))))
@@ -1227,6 +1274,22 @@ function App() {
   const matchingOrganizationMembers = searchTerm
     ? myOrganizationMembers.filter((member) => member.name.toLocaleLowerCase().includes(searchTerm))
     : []
+
+  useEffect(() => {
+    if (!organizationPaymentReportRequested) return undefined
+
+    const resetPrintRequest = () => setOrganizationPaymentReportRequested(false)
+    window.addEventListener('afterprint', resetPrintRequest)
+    const printTimer = window.setTimeout(() => {
+      window.print()
+      resetPrintRequest()
+    }, 50)
+
+    return () => {
+      window.clearTimeout(printTimer)
+      window.removeEventListener('afterprint', resetPrintRequest)
+    }
+  }, [organizationPaymentReportRequested])
 
   useEffect(() => {
     if (!user) return undefined
@@ -1928,7 +1991,17 @@ function App() {
                 <button className="primary-button" disabled={loading || (!duesGcashNumber.trim() && !duesGcashQrFile && !selectedDuesOrganization.organization.gcash_qr_url)}>Save GCash details</button>
               </form>}
               {selectedDuesOrganization && <div className="dues-management-list">
-                <div className="dues-section-heading"><div><h4>Payment roster</h4><p>Record member payments and print a stub for every transaction.</p></div></div>
+                <div className="dues-section-heading">
+                  <div><h4>Payment roster</h4><p>Record member payments and print a stub for every transaction.</p></div>
+                  <button
+                    className="primary-button"
+                    type="button"
+                    disabled={!selectedOrganizationPayments.length}
+                    onClick={() => setOrganizationPaymentReportRequested(true)}
+                  >
+                    Print all payments
+                  </button>
+                </div>
                 {filteredManagerDues.length ? filteredManagerDues.map((due) => {
                   const visibleMembers = due.members.filter((member) => matchesDuesStatus(member.status))
                   const outstandingCount = due.members.filter((member) => Number(member.balance) > 0).length
@@ -1984,6 +2057,31 @@ function App() {
                     </div> : <EmptyState title="No members match these filters" description="Change the school year or payment-status filters to see the roster." />}
                   </article>
                 }) : <EmptyState title="No dues schedule for this filter" description="Save an annual schedule above or choose another school year or payment status." />}
+                {organizationPaymentReportRequested && selectedDuesManagement && <div className="print-payment-report">
+                  <h1>Payment report — {selectedDuesManagement.organization.name}</h1>
+                  <p>{selectedDuesManagement.organization.college} · All school years · Generated {new Date().toLocaleDateString()}</p>
+                  <div className="print-payment-report-summary">
+                    <span>Approved: {organizationPaymentTotals.approved.count} · {formatCurrency(organizationPaymentTotals.approved.amount)}</span>
+                    <span>Pending: {organizationPaymentTotals.pending.count} · {formatCurrency(organizationPaymentTotals.pending.amount)}</span>
+                    <span>Rejected: {organizationPaymentTotals.rejected.count} · {formatCurrency(organizationPaymentTotals.rejected.amount)}</span>
+                  </div>
+                  <table>
+                    <thead><tr><th>Payment ID</th><th>School year</th><th>Member</th><th>Amount</th><th>Date</th><th>Status</th><th>Reference</th><th>Recorded by</th><th>Reviewed by</th></tr></thead>
+                    <tbody>{selectedOrganizationPayments.length ? selectedOrganizationPayments.map(({ due, member, payment }) => (
+                      <tr key={payment.id}>
+                        <td>DUES-{String(payment.id).padStart(6, '0')}</td>
+                        <td>{due.school_year}</td>
+                        <td>{member.name}<br />{member.email}</td>
+                        <td>{formatCurrency(payment.amount)}</td>
+                        <td>{formatDate(payment.paid_at)}</td>
+                        <td>{payment.status}</td>
+                        <td>{payment.reference_last_four ? `Ending ${payment.reference_last_four}` : '—'}</td>
+                        <td>{payment.recorded_by || 'Member submission'}</td>
+                        <td>{payment.reviewed_by || '—'}</td>
+                      </tr>
+                    )) : <tr><td colSpan="9">No payment transactions recorded.</td></tr>}</tbody>
+                  </table>
+                </div>}
               </div>}
             </section>}
           </section>
@@ -2262,9 +2360,15 @@ function App() {
                         : payment.reviewed_by && ['approved', 'rejected'].includes(payment.status)
                           ? <div className="payment-history-action-links">
                             {Number(selectedDuesMember.member.user_id) !== Number(user.id) && <button className="text-button" type="button" disabled={loading} onClick={() => reviewGcashPayment(payment, 'pending')}>Cancel decision</button>}
-                            {payment.status === 'approved' && <button className="text-button" type="button" disabled={loading} onClick={() => startCorrectingDuesPayment(payment)}>Edit amount</button>}
+                            {payment.status === 'approved' && <>
+                              <button className="text-button" type="button" disabled={loading} onClick={() => openExistingPaymentReceipt(payment)}>Print receipt</button>
+                              <button className="text-button" type="button" disabled={loading} onClick={() => startCorrectingDuesPayment(payment)}>Edit amount</button>
+                            </>}
                           </div>
-                          : payment.status === 'approved' && <button className="text-button" type="button" disabled={loading} onClick={() => startCorrectingDuesPayment(payment)}>Edit amount</button>}
+                          : payment.status === 'approved' && <div className="payment-history-action-links">
+                            <button className="text-button" type="button" disabled={loading} onClick={() => openExistingPaymentReceipt(payment)}>Print receipt</button>
+                            <button className="text-button" type="button" disabled={loading} onClick={() => startCorrectingDuesPayment(payment)}>Edit amount</button>
+                          </div>}
                     </div>
                   </article>
                 ))}
@@ -2287,7 +2391,9 @@ function App() {
                 <div><dt>Payment date</dt><dd>{new Date(duesReceipt.paid_at).toLocaleString()}</dd></div>
                 <div><dt>Recorded by</dt><dd>{duesReceipt.recorded_by || 'Treasurer'}</dd></div>
                 <div><dt>Annual dues</dt><dd>{formatCurrency(duesReceipt.dues_amount)}</dd></div>
+                <div><dt>Payment status</dt><dd>{duesReceipt.status || 'approved'}</dd></div>
                 <div><dt>Amount received</dt><dd className="receipt-amount">{formatCurrency(duesReceipt.payment_amount)}</dd></div>
+                {duesReceipt.reference_last_four && <div><dt>Reference</dt><dd>Ending {duesReceipt.reference_last_four}</dd></div>}
                 <div><dt>Total paid this year</dt><dd>{formatCurrency(duesReceipt.total_paid)}</dd></div>
                 <div><dt>Remaining balance</dt><dd>{formatCurrency(duesReceipt.balance)}</dd></div>
               </dl>
